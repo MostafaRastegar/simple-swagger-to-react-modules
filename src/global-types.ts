@@ -82,4 +82,15 @@ export interface TsConfigConfig {
   // Add other relevant fields
 }
 
-// Add other global types as needed
+// Type definitions for Tag Grouping
+export interface AssociatedOperation {
+  path: string;
+  method: string;
+  operation: SwaggerOperation;
+}
+
+export interface TagGroupData {
+  tagName: string;
+  associatedModels: Record<string, SwaggerDefinition>; // Key is definition name
+  associatedOperations: AssociatedOperation[];
+}

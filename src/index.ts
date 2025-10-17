@@ -19,6 +19,9 @@ import type {
   ParsedSwaggerData,
   SwaggerOperation,
   SwaggerPathItem,
+  SwaggerDefinition,
+  TagGroupData,
+  AssociatedOperation,
 } from "./global-types";
 
 const program = new Command();
@@ -88,101 +91,108 @@ program
         console.log(`Setting up output directory: ${outputDir}`);
         const fileWriter = new FileWriter(outputDir);
 
-        // 4. Generate TypeScript Interfaces
-        console.log("Generating TypeScript interfaces...");
-        const interfaceFiles: Record<string, string> = {};
-        for (const [definitionName] of Object.entries(
-          swaggerData.definitions || {}
-        )) {
-          console.log(`  - Generating interface for: ${definitionName}`);
-          const prompt = llmGenerator.generateInterfacePrompt(
-            swaggerData,
-            definitionName
+        // 4. Group Swagger data by tags
+        console.log("Grouping Swagger data by tags...");
+        const tagGroups: TagGroupData[] = groupSwaggerDataByTags(swaggerData);
+        console.log(
+          `Found ${tagGroups.length} tag groups: ${tagGroups
+            .map((tg) => tg.tagName)
+            .join(", ")}`
+        );
+
+        // 5. Generate files for each tag group
+        const allGeneratedFiles: Record<string, string> = {};
+        for (const tagGroup of tagGroups) {
+          console.log(`\n--- Processing Tag: ${tagGroup.tagName} ---`);
+
+          // 5a. Generate Models for the tag
+          console.log(`  Generating models for tag: ${tagGroup.tagName}`);
+          for (const [definitionName, definition] of Object.entries(
+            tagGroup.associatedModels
+          )) {
+            console.log(`    - Generating interface for: ${definitionName}`);
+            const prompt = llmGenerator.generateInterfacePrompt(
+              swaggerData,
+              definitionName
+            );
+            const interfaceCode = await llmGenerator.generateCode(prompt);
+            const cleanCode = interfaceCode
+              .replace(/```typescript\n?|```\n?/g, "")
+              .trim();
+            allGeneratedFiles[
+              `src/modules/${tagGroup.tagName}/domains/models/${definitionName}.ts`
+            ] = cleanCode;
+          }
+
+          // 5b. Generate Service Interface for the tag
+          console.log(
+            `  Generating service interface for tag: ${tagGroup.tagName}`
           );
-          const interfaceCode = await llmGenerator.generateCode(prompt);
-          // Basic cleaning of potential markdown artifacts if any
-          const cleanCode = interfaceCode
+          const serviceInterfacePrompt =
+            llmGenerator.generateServiceInterfacePrompt(
+              swaggerData,
+              tagGroup.tagName,
+              tagGroup.associatedOperations
+            );
+          const serviceInterfaceCode = await llmGenerator.generateCode(
+            serviceInterfacePrompt
+          );
+          const cleanServiceInterfaceCode = serviceInterfaceCode
             .replace(/```typescript\n?|```\n?/g, "")
             .trim();
-          interfaceFiles[`models/${definitionName}.ts`] = cleanCode;
+          allGeneratedFiles[
+            `src/modules/${tagGroup.tagName}/domains/I${tagGroup.tagName}Service.ts`
+          ] = cleanServiceInterfaceCode;
+
+          // 5c. Generate Service Implementation for the tag
+          console.log(
+            `  Generating service implementation for tag: ${tagGroup.tagName}`
+          );
+          const serviceImplementationPrompt =
+            llmGenerator.generateServiceImplementationPrompt(
+              swaggerData,
+              tagGroup.tagName,
+              tagGroup.associatedOperations,
+              cleanServiceInterfaceCode // Pass the generated interface for context
+            );
+          const serviceImplementationCode = await llmGenerator.generateCode(
+            serviceImplementationPrompt
+          );
+          const cleanServiceImplementationCode = serviceImplementationCode
+            .replace(/```typescript\n?|```\n?/g, "")
+            .trim();
+          allGeneratedFiles[
+            `src/modules/${tagGroup.tagName}/${tagGroup.tagName}.service.ts`
+          ] = cleanServiceImplementationCode;
+
+          // 5d. Generate Presentation Layer for the tag
+          console.log(
+            `  Generating presentation layer for tag: ${tagGroup.tagName}`
+          );
+          const presentationPrompt =
+            llmGenerator.generatePresentationLayerPrompt(
+              swaggerData,
+              tagGroup.tagName,
+              tagGroup.associatedOperations,
+              cleanServiceInterfaceCode // Pass the generated interface for context
+            );
+          const presentationCode = await llmGenerator.generateCode(
+            presentationPrompt
+          );
+          const cleanPresentationCode = presentationCode
+            .replace(/```typescript\n?|```\n?/g, "")
+            .trim();
+          allGeneratedFiles[
+            `src/modules/${tagGroup.tagName}/${tagGroup.tagName}.presentation.ts`
+          ] = cleanPresentationCode;
         }
-        fileWriter.writeTsFiles(interfaceFiles);
-        const modelFileNames = Object.keys(interfaceFiles).map((f) =>
-          path.basename(f)
-        );
 
-        // 5. Generate Service Classes
-        console.log("Generating service classes...");
-        const serviceFiles: Record<string, string> = {};
-        const serviceNames: string[] = []; // Explicitly type as string array
-        for (const [pathVal, pathItem] of Object.entries<SwaggerPathItem>(
-          swaggerData.paths || {}
-        )) {
-          // Ensure pathItem is correctly typed for its methods
-          const pathItemOperations = pathItem as {
-            [key: string]: SwaggerOperation;
-          };
-          for (const [method, operation] of Object.entries<SwaggerOperation>(
-            pathItemOperations
-          )) {
-            if (
-              [
-                "get",
-                "post",
-                "put",
-                "delete",
-                "patch",
-                "head",
-                "options",
-              ].includes(method)
-            ) {
-              const serviceName = llmGenerator.generateMethodName(
-                pathVal,
-                method,
-                operation
-              );
-              serviceNames.push(serviceName);
-              console.log(
-                `  - Generating service method for: ${serviceName} (${method.toUpperCase()} ${pathVal})`
-              );
-              const prompt = llmGenerator.generateServiceMethodPrompt(
-                swaggerData,
-                pathVal,
-                method,
-                operation
-              );
-              const methodCode = await llmGenerator.generateCode(prompt);
-              const cleanMethodCode = methodCode
-                .replace(/```typescript\n?|```\n?/g, "")
-                .trim();
+        // 6. Write all generated files
+        console.log("\nWriting all generated files...");
+        fileWriter.writeTsFiles(allGeneratedFiles);
 
-              const serviceFileName = `services/${serviceName}Service.ts`;
-              let existingServiceCode = serviceFiles[serviceFileName] || ""; // Use empty string if undefined
-
-              const classDeclaration = `export class ${serviceName}Service {\n${cleanMethodCode}\n}`;
-
-              if (
-                !existingServiceCode.includes(
-                  `export class ${serviceName}Service`
-                )
-              ) {
-                serviceFiles[serviceFileName] = classDeclaration;
-              } else {
-                console.warn(
-                  `Warning: Service file ${serviceFileName} already exists. Overwriting with new class for ${serviceName}. Consider grouping by tag.`
-                );
-                serviceFiles[serviceFileName] = classDeclaration; // Overwrite for now
-              }
-            }
-          }
-        }
-        fileWriter.writeTsFiles(serviceFiles);
-        const serviceFileNames = Object.keys(serviceFiles).map((f) =>
-          path.basename(f)
-        );
-
-        // 6. Generate package.json, tsconfig.json, README.md, index.ts, .gitignore
-        console.log("Generating configuration files...");
+        // 7. Generate package.json, tsconfig.json, README.md, index.ts, .gitignore
+        console.log("\nGenerating configuration files...");
         const projectName = path.basename(outputDir);
         const packageJsonData = {
           name: projectName.toLowerCase().replace(/\s+/g, "-"),
@@ -190,15 +200,16 @@ program
           description: `Generated frontend client for ${
             swaggerData.host || "API"
           }`,
-          main: "index.ts",
+          main: "src/index.ts", // Adjusted if output is src/...
           scripts: {
             build: "tsc",
             start: "node dist/index.js", // Or a dev server script if applicable
             test: 'echo "Error: no test specified" && exit 1',
           },
           dependencies: {
-            axios: "^1.6.0", // Use a specific version or lock it
-            // Add other common dependencies if needed by generated code (e.g., react-query)
+            axios: "^1.6.0",
+            "@tanstack/react-query": "^5.0.0", // Added React Query
+            // Add other common dependencies if needed by generated code
           },
           devDependencies: {
             typescript: "^5.2.2",
@@ -206,7 +217,7 @@ program
             "ts-node": "^10.9.1",
           },
           keywords: ["swagger", "client", "typescript", "generated"],
-          author: "", // Could be configurable
+          author: "",
           license: "ISC",
         };
         fileWriter.writePackageJson(packageJsonData);
@@ -216,8 +227,8 @@ program
             target: "ES2020",
             module: "commonjs",
             lib: ["ES2020"],
-            outDir: "./dist",
-            rootDir: "./",
+            outDir: "./dist", // Output dist at the root of the project
+            rootDir: "./src", // Source files are in src/
             strict: true,
             esModuleInterop: true,
             skipLibCheck: true,
@@ -226,7 +237,7 @@ program
             declaration: true,
             sourceMap: true,
           },
-          include: ["**/*.ts"],
+          include: ["src/**/*"], // Only include src directory
           exclude: ["node_modules", "dist"],
         };
         fileWriter.writeTsConfigJson(tsConfigData);
@@ -235,10 +246,11 @@ program
           projectName,
           `Generated frontend client for ${swaggerData.host || "an API"}.`
         );
-        fileWriter.writeIndexFile({
-          models: modelFileNames,
-          services: serviceFileNames,
-        });
+
+        // Generate an index.ts in the src/ directory to re-export modules
+        const srcIndexContent = generateSrcIndexContent(tagGroups);
+        fileWriter.writeTsFile("src/index.ts", srcIndexContent);
+
         fileWriter.writeGitignore();
 
         console.log("\n✅ Generation complete!");
@@ -247,9 +259,11 @@ program
         console.log(`  1. cd ${outputDir}`);
         console.log("  2. npm install");
         console.log(
-          '  3. Configure axios base URL in your application if needed (e.g., axios.defaults.baseURL = "YOUR_API_URL");'
+          '  3. Configure axios base URL in your application if needed (e.g., in your setup file: axios.defaults.baseURL = "YOUR_API_URL");'
         );
-        console.log("  4. Import and use the generated models and services.");
+        console.log(
+          "  4. Import and use the generated modules from src/index.ts or directly from src/modules/."
+        );
       } catch (error: any) {
         console.error("\n❌ An error occurred during generation:");
         console.error(error.message || error);
@@ -259,3 +273,158 @@ program
   );
 
 program.parse();
+
+/**
+ * Groups Swagger data by tags.
+ * @param {ParsedSwaggerData} swaggerData - The parsed Swagger data.
+ * @returns {TagGroupData[]} - An array of tag groups.
+ */
+function groupSwaggerDataByTags(
+  swaggerData: ParsedSwaggerData
+): TagGroupData[] {
+  const tagMap: Record<string, TagGroupData> = {};
+
+  // Initialize tags from Swagger root definition
+  if (swaggerData.tags) {
+    swaggerData.tags.forEach((tagInfo) => {
+      if (!tagMap[tagInfo.name]) {
+        tagMap[tagInfo.name] = {
+          tagName: tagInfo.name,
+          associatedModels: {},
+          associatedOperations: [],
+        };
+      }
+    });
+  }
+
+  // Create default tag if no other tags are found/used
+  const defaultTagName = "General";
+  if (!Object.keys(tagMap).length) {
+    tagMap[defaultTagName] = {
+      tagName: defaultTagName,
+      associatedModels: {},
+      associatedOperations: [],
+    };
+  }
+
+  // Associate operations with tags
+  for (const [pathVal, pathItem] of Object.entries(swaggerData.paths || {})) {
+    for (const [method, operation] of Object.entries(pathItem)) {
+      if (
+        ["get", "post", "put", "delete", "patch", "head", "options"].includes(
+          method.toLowerCase()
+        )
+      ) {
+        const operationTags = (operation && operation.tags) || [defaultTagName];
+        const primaryTag = operationTags[0]; // Use the first tag
+
+        if (!tagMap[primaryTag]) {
+          tagMap[primaryTag] = {
+            tagName: primaryTag,
+            associatedModels: {},
+            associatedOperations: [],
+          };
+        }
+        if (operation) {
+          // Ensure operation is defined
+          tagMap[primaryTag].associatedOperations.push({
+            path: pathVal,
+            method: method.toLowerCase(),
+            operation,
+          });
+        }
+      }
+    }
+  }
+
+  // Associate models with tags based on usage in operations
+  for (const [tagName, tagGroup] of Object.entries(tagMap)) {
+    const usedDefinitionNames = new Set<string>();
+
+    for (const op of tagGroup.associatedOperations) {
+      const operation = op.operation; // SwaggerOperation is guaranteed to be defined here by AssociatedOperation type
+      // Check parameters
+      if (operation && operation.parameters) {
+        // Check operation again for safety, though type implies it's defined
+        for (const param of operation.parameters) {
+          if (param.schema) {
+            findDefinitionsInSchema(
+              param.schema,
+              usedDefinitionNames,
+              swaggerData.definitions
+            );
+          }
+        }
+      }
+      // Check responses
+      if (operation && operation.responses) {
+        // Check operation again for safety
+        for (const response of Object.values(operation.responses)) {
+          if (response.schema) {
+            findDefinitionsInSchema(
+              response.schema,
+              usedDefinitionNames,
+              swaggerData.definitions
+            );
+          }
+        }
+      }
+    }
+
+    // Add definitions to the tag group
+    for (const defName of usedDefinitionNames) {
+      if (swaggerData.definitions && swaggerData.definitions[defName]) {
+        tagGroup.associatedModels[defName] = swaggerData.definitions[defName];
+      }
+    }
+  }
+
+  return Object.values(tagMap);
+}
+
+/**
+ * Recursively finds $ref definitions in a schema.
+ */
+function findDefinitionsInSchema(
+  schema: any,
+  definitionNames: Set<string>,
+  allDefinitions?: Record<string, SwaggerDefinition>
+) {
+  if (schema.$ref) {
+    const refName = schema.$ref.split("/").pop();
+    if (refName && allDefinitions && allDefinitions[refName]) {
+      definitionNames.add(refName);
+      // Also check properties of the definition itself if it's an object
+      const def = allDefinitions[refName];
+      if (def.properties) {
+        for (const prop of Object.values(def.properties)) {
+          if (typeof prop === "object" && prop !== null) {
+            findDefinitionsInSchema(prop, definitionNames, allDefinitions);
+          }
+        }
+      }
+    }
+  } else if (schema.type === "object" && schema.properties) {
+    for (const prop of Object.values(schema.properties)) {
+      if (typeof prop === "object" && prop !== null) {
+        findDefinitionsInSchema(prop, definitionNames, allDefinitions);
+      }
+    }
+  } else if (schema.type === "array" && schema.items) {
+    findDefinitionsInSchema(schema.items, definitionNames, allDefinitions);
+  }
+}
+
+/**
+ * Generates the content for the main src/index.ts file.
+ * @param {TagGroupData[]} tagGroups - The tag groups.
+ * @returns {string} The content for src/index.ts.
+ */
+function generateSrcIndexContent(tagGroups: TagGroupData[]): string {
+  let content = "// Generated by swagger-to-modules\n\n";
+  tagGroups.forEach((tagGroup) => {
+    content += `// Module for ${tagGroup.tagName}\n`;
+    content += `export * as ${tagGroup.tagName}Module from './modules/${tagGroup.tagName}';\n\n`;
+  });
+  return content;
+}

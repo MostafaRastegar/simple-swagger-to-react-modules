@@ -5,35 +5,13 @@ import type {
   SwaggerParameter,
   SwaggerResponse,
   SwaggerOperation,
-  SwaggerPathItem, // Although not directly used here, it's good to import if it's part of the main Swagger types
+  SwaggerPathItem,
   SwaggerDefinition,
-  ParsedSwaggerData, // Using the main ParsedSwaggerData
+  ParsedSwaggerData,
 } from "../global-types";
 
-// Type definitions for LLMGenerator methods
-interface CodeGenerationResponse {
-  choices: Array<{
-    message: {
-      content: string;
-    };
-  }>;
-}
-
-interface LLMConfig {
-  apiKey: string;
-  model: string;
-  baseUrl: string;
-}
-
-interface LLMClientConfig {
-  baseURL: string;
-  headers: {
-    Authorization: string;
-    "Content-Type": string;
-    "HTTP-Referer": string;
-    "X-Title": string;
-  };
-}
+// Type definitions for associated operations
+import type { AssociatedOperation } from "../global-types";
 
 /**
  * Generates code using an LLM via OpenRouter API.
@@ -57,7 +35,7 @@ class LLMGenerator {
       headers: {
         Authorization: `Bearer ${this.apiKey}`,
         "Content-Type": "application/json",
-        "HTTP-Referer": "https://github.com/your-repo/swagger-to-modules", // Replace with your actual repo
+        "HTTP-Referer": "https://github.com/your-repo/swagger-to-modules",
         "X-Title": "Swagger to Modules Agent",
       },
     });
@@ -87,12 +65,11 @@ class LLMGenerator {
         const optionalStr = isRequired ? "" : "?";
         const type =
           propDetails.type ||
-          (propDetails.$ref ? propDetails.$ref.split("/").pop() : "any"); // Handle $ref for other definitions
+          (propDetails.$ref ? propDetails.$ref.split("/").pop() : "any");
         const description = propDetails.description
           ? `/** ${propDetails.description} */\n  `
           : "";
 
-        // Handle array types
         if (propDetails.type === "array" && propDetails.items) {
           const itemsType =
             propDetails.items.type ||
@@ -101,11 +78,9 @@ class LLMGenerator {
               : "any");
           return `${description}${propName}${optionalStr}: ${itemsType}[];`;
         }
-        // Handle object types without explicit properties (or complex ones not fully defined here)
         if (propDetails.type === "object" && !propDetails.properties) {
           return `${description}${propName}${optionalStr}: Record<string, any>;`;
         }
-
         return `${description}${propName}${optionalStr}: ${type};`;
       })
       .join("\n    ");
@@ -139,180 +114,6 @@ ${propertiesStr}
   }
 
   /**
-   * Prepares a prompt for generating a service class method from a Swagger operation.
-   * @param {ParsedSwaggerData} swaggerData - Parsed Swagger data.
-   * @param {string} path - The API path.
-   * @param {string} method - The HTTP method (lowercase).
-   * @param {SwaggerOperation} operation - The operation object.
-   * @returns {string} The formatted prompt.
-   */
-  generateServiceMethodPrompt(
-    swaggerData: ParsedSwaggerData,
-    path: string,
-    method: string,
-    operation: SwaggerOperation
-  ): string {
-    const pathParams = operation.parameters
-      ? operation.parameters.filter((p: SwaggerParameter) => p.in === "path")
-      : [];
-    const queryParams = operation.parameters
-      ? operation.parameters.filter((p: SwaggerParameter) => p.in === "query")
-      : [];
-    const headerParams = operation.parameters
-      ? operation.parameters.filter((p: SwaggerParameter) => p.in === "header")
-      : [];
-    // For simplicity, assuming body parameter is for 'post', 'put', 'patch'
-    // and there's typically one body parameter or it's form data
-    const bodyParam = operation.parameters
-      ? operation.parameters.find((p: SwaggerParameter) => p.in === "body")
-      : null;
-    const formDataParam = operation.parameters
-      ? operation.parameters.find((p: SwaggerParameter) => p.in === "formData")
-      : null;
-
-    const methodName = this.generateMethodName(path, method, operation);
-    const returnType = this.determineServiceMethodReturnType(operation);
-
-    let paramsStr = "";
-    if (pathParams.length > 0) {
-      paramsStr += pathParams
-        .map(
-          (p: SwaggerParameter) =>
-            `${p.name}: ${this.mapSwaggerTypeToTs(
-              p.type || (p.schema ? p.schema.type : "string")
-            )}${
-              p.required
-                ? ""
-                : " = " /*TODO: provide default or make optional */
-            }`
-        )
-        .join(", ");
-      if (
-        queryParams.length > 0 ||
-        headerParams.length > 0 ||
-        bodyParam ||
-        formDataParam
-      )
-        paramsStr += ", ";
-    }
-    if (queryParams.length > 0) {
-      paramsStr += queryParams
-        .map(
-          (p: SwaggerParameter) =>
-            `${p.name}: ${this.mapSwaggerTypeToTs(
-              p.type || (p.schema ? p.schema.type : "string")
-            )}${
-              p.required
-                ? ""
-                : " = " /*TODO: provide default or make optional */
-            }`
-        )
-        .join(", ");
-      if (headerParams.length > 0 || bodyParam || formDataParam)
-        paramsStr += ", ";
-    }
-    if (headerParams.length > 0) {
-      // Example: headers: { 'Content-Type': 'application/json' }
-      // Or more dynamically: customHeaders?: Record<string, string>
-      paramsStr += "customHeaders?: Record<string, string>, ";
-    }
-    if (bodyParam || formDataParam) {
-      const bodySchema = bodyParam
-        ? bodyParam.schema
-        : formDataParam
-        ? formDataParam.schema
-        : null;
-      const bodyTypeName = bodySchema
-        ? bodySchema.$ref
-          ? bodySchema.$ref.split("/").pop()
-          : bodySchema.type || "any"
-        : "any";
-      paramsStr += `data: ${bodyTypeName}${
-        bodyParam && !bodyParam.required ? "?" : ""
-      }`;
-    }
-
-    const consumes =
-      operation.consumes && operation.consumes.length > 0
-        ? operation.consumes[0]
-        : "application/json";
-    const produces =
-      operation.produces && operation.produces.length > 0
-        ? operation.produces[0]
-        : "application/json";
-
-    return `
-You are an expert TypeScript developer and API integration specialist.
-
-Given the following Swagger operation details:
-
-Path: \`${path}\`
-Method: \`${method.toUpperCase()}\`
-Summary: \`${operation.summary || ""}\`
-Description: \`${operation.description || ""}\`
-
-Parameters:
-${
-  operation.parameters
-    ? operation.parameters
-        .map(
-          (p: SwaggerParameter) =>
-            `- \`${p.name}\` (${p.in}): ${
-              p.description || "No description"
-            }, Type: ${
-              p.type || (p.schema ? p.schema.type : "string")
-            }, Required: ${p.required || false}`
-        )
-        .join("\n")
-    : "None"
-}
-
-Body/FormData Schema:
-${
-  bodyParam
-    ? JSON.stringify(bodyParam.schema, null, 2)
-    : formDataParam
-    ? JSON.stringify(formDataParam.schema, null, 2)
-    : "None"
-}
-
-Response Example (if available in schema):
-${
-  operation.responses &&
-  operation.responses["200"] &&
-  operation.responses["200"].schema
-    ? JSON.stringify(operation.responses["200"].schema, null, 2)
-    : "N/A"
-}
-
-Generate a TypeScript method for an API service class.
-Method Name: \`${methodName}\`
-Parameters: (${paramsStr})
-Return Type: \`${returnType}\`
-Use \`axios\` for the HTTP request.
-Assume base URL is configured elsewhere (e.g., \`axios.defaults.baseURL\`).
-Set the \`Content-Type\` header appropriately based on \`${consumes}\`.
-Handle potential errors using a try...catch block and return a rejected promise or throw an error.
-For responses, assume successful data is in the response.data property (e.g., \`response.data\` for axios).
-
-Provide only the TypeScript method code, no explanations or markdown code block formatting.
-Example:
-async getMyResource(id: number): Promise<MyData> {
-  try {
-    const response = await axios.get(\`/my-resource/\${id}\`);
-    return response.data;
-  } catch (error) {
-    console.error("Error fetching my resource:", error);
-    throw error;
-  }
-}
-async ${methodName}(${paramsStr}): Promise<${returnType}> {
-  // Your implementation here
-}
-`;
-  }
-
-  /**
    * Generates a descriptive method name from an operation.
    */
   generateMethodName(
@@ -320,11 +121,8 @@ async ${methodName}(${paramsStr}): Promise<${returnType}> {
     method: string,
     operation: SwaggerOperation
   ): string {
-    // Sanitize path: remove leading '/', replace '/' and '-' with '_', remove trailing '/'
     const cleanPath = path.replace(/^\/|\/$/g, "").replace(/\/|-/g, "_");
-    // Use operation ID if available, otherwise generate from path and method
     const operationId = operation.operationId || `${method}_${cleanPath}`;
-    // CamelCase the operationId
     return operationId
       .replace(/(?:^\w|[A-Z]|\b\w)/g, (word: string, index: number) => {
         return index === 0 ? word.toLowerCase() : word.toUpperCase();
@@ -334,16 +132,12 @@ async ${methodName}(${paramsStr}): Promise<${returnType}> {
 
   /**
    * Determines the return type for a service method based on Swagger responses.
-   * For simplicity, this will often be a Promise of the primary response data type.
    */
   determineServiceMethodReturnType(operation: SwaggerOperation): string {
-    // Default to any
     if (!operation.responses || Object.keys(operation.responses).length === 0) {
       return "any";
     }
 
-    // Typically '200' is the success status, but could be '201', '204', etc.
-    // For now, let's assume the first 2xx response or '200' as primary.
     const successfulResponseEntry: [string, SwaggerResponse] | undefined =
       Object.entries(operation.responses).find(([status]) =>
         status.startsWith("2")
@@ -366,28 +160,25 @@ async ${methodName}(${paramsStr}): Promise<${returnType}> {
         return `${itemsType}[]`;
       }
       if (successfulResponse.schema.$ref) {
-        return successfulResponse.schema.$ref.split("/").pop() as string; // Get type from $ref
+        return successfulResponse.schema.$ref.split("/").pop() as string;
       }
       if (successfulResponse.schema.type) {
-        // Handle basic types and objects
         if (
           successfulResponse.schema.type === "object" &&
           !successfulResponse.schema.properties
         ) {
-          return "Record<string, any>"; // Generic object
+          return "Record<string, any>";
         }
         if (
           successfulResponse.schema.type === "object" &&
           successfulResponse.schema.properties
         ) {
-          // This is a simplification; ideally, it would map to a specific interface name
-          // For now, returning 'any' or 'Record<string, any>' for complex objects without a direct $ref
-          return "Record<string, any>"; // Or a more specific type if mappings are known
+          return "Record<string, any>";
         }
         return successfulResponse.schema.type;
       }
     }
-    return "any"; // Default fallback
+    return "any";
   }
 
   /**
@@ -401,15 +192,425 @@ async ${methodName}(${paramsStr}): Promise<${returnType}> {
       double: "number",
       string: "string",
       boolean: "boolean",
-      array: "any[]", // Simplified, items type should be handled
+      array: "any[]",
       object: "Record<string, any>",
-      file: "File", // Or Blob, depending on client capabilities
-      date: "string", // Or Date, if parsing is handled
-      "date-time": "string", // Or Date
+      file: "File",
+      date: "string",
+      "date-time": "string",
       password: "string",
       email: "string",
     };
     return typeMap[swaggerType] || "any";
+  }
+
+  /**
+   * Prepares a prompt for generating a service interface for a given tag.
+   * @param {ParsedSwaggerData} swaggerData - Parsed Swagger data.
+   * @param {string} tagName - The name of the tag.
+   * @param {AssociatedOperation[]} operations - Operations associated with this tag.
+   * @returns {string} The formatted prompt.
+   */
+  generateServiceInterfacePrompt(
+    swaggerData: ParsedSwaggerData,
+    tagName: string,
+    operations: AssociatedOperation[]
+  ): string {
+    const methodSignatures = operations
+      .map((op) => {
+        const returnType = this.determineServiceMethodReturnType(op.operation);
+        const paramsStr = this.generateMethodParams(op.operation);
+        const pathSegments = op.path
+          .split("/")
+          .map((segment) =>
+            segment.startsWith("{")
+              ? `By${segment.slice(1, -1)}`
+              : segment.charAt(0).toUpperCase() + segment.slice(1)
+          )
+          .join("");
+        const methodName = `${op.method}${pathSegments}`;
+        return `  ${methodName}(${paramsStr}): Promise<${returnType}>;`;
+      })
+      .join("\n");
+
+    const operationsList = operations
+      .map(
+        (op) =>
+          `- ${op.method.toUpperCase()} ${op.path}: ${
+            op.operation.summary || "No summary"
+          }`
+      )
+      .join("\n");
+
+    return `
+You are an expert TypeScript developer.
+
+Given the following Swagger operations for the "${tagName}" tag:
+
+${operationsList}
+
+Generate a TypeScript interface named \`I${tagName}Service\`.
+This interface should contain method signatures for all the operations listed above.
+Use \`axios\` for the HTTP request types (e.g., \`Promise<T>\` for return types).
+Assume base URL is configured elsewhere.
+Parameters should be typed based on Swagger definitions.
+
+Provide only the TypeScript interface code, no explanations or markdown code block formatting.
+Example:
+export interface IMyService {
+  getResource(id: number): Promise<MyData>;
+  createResource(data: MyDataInput): Promise<MyData>;
+}
+export interface I${tagName}Service {
+${methodSignatures}
+}
+`;
+  }
+
+  /**
+   * Prepares a prompt for generating a service implementation for a given tag.
+   * @param {ParsedSwaggerData} swaggerData - Parsed Swagger data.
+   * @param {string} tagName - The name of the tag.
+   * @param {AssociatedOperation[]} operations - Operations associated with this tag.
+   * @param {string} serviceInterfaceCode - The generated service interface code for context.
+   * @returns {string} The formatted prompt.
+   */
+  generateServiceImplementationPrompt(
+    swaggerData: ParsedSwaggerData,
+    tagName: string,
+    operations: AssociatedOperation[],
+    serviceInterfaceCode: string
+  ): string {
+    const methodImplementations = operations
+      .map((op) => {
+        const pathSegments = op.path
+          .split("/")
+          .map((segment) =>
+            segment.startsWith("{")
+              ? `By${segment.slice(1, -1)}`
+              : segment.charAt(0).toUpperCase() + segment.slice(1)
+          )
+          .join("");
+        const methodName = `${op.method}${pathSegments}`;
+        const paramsStr = this.generateMethodParams(op.operation);
+        const returnType = this.determineServiceMethodReturnType(op.operation);
+        const consumes =
+          op.operation.consumes && op.operation.consumes.length > 0
+            ? op.operation.consumes[0]
+            : "application/json";
+
+        const urlPathParams = this.generateUrlPathParams(op.operation);
+        const axiosConfig = this.generateAxiosConfig(op.operation, consumes);
+
+        const axiosCall = `axios.${op.method}(\`\${this.getBaseUrl()}${op.path}${urlPathParams}\`, ${axiosConfig})`;
+
+        return `  async ${methodName}(${paramsStr}): Promise<${returnType}> {
+    try {
+      const response = await ${axiosCall};
+      return response.data;
+    } catch (error) {
+      console.error(\`Error in ${methodName}:\`, error);
+      throw error;
+    }
+  }`;
+      })
+      .join("\n\n");
+
+    const operationsList = operations
+      .map(
+        (op) =>
+          `- ${op.method.toUpperCase()} ${op.path}: ${
+            op.operation.summary || "No summary"
+          }`
+      )
+      .join("\n");
+
+    return `
+You are an expert TypeScript developer and API integration specialist.
+
+Given the following Swagger operations for the "${tagName}" tag and the service interface:
+
+Operations:
+${operationsList}
+
+Service Interface (for reference):
+\`\`\`typescript
+${serviceInterfaceCode}
+\`\`\`
+
+Generate a TypeScript class named \`${tagName}Service\` that implements the \`I${tagName}Service\` interface.
+Each method in the class should make an HTTP request using \`axios\`.
+Set the \`Content-Type\` header appropriately.
+Handle potential errors using a try...catch block.
+For successful responses, assume data is in the response.data property.
+You can assume a \`getBaseUrl()\` method is available on the class or \`axios.defaults.baseURL\` is set.
+
+Provide only the TypeScript class code that implements the interface, no explanations or markdown code block formatting.
+Example:
+export class MyService implements IMyService {
+  async getResource(id: number): Promise<MyData> {
+    // implementation
+  }
+}
+export class ${tagName}Service implements I${tagName}Service {
+${methodImplementations}
+}
+`;
+  }
+
+  /**
+   * Prepares a prompt for generating React Query hooks for a given tag.
+   * @param {ParsedSwaggerData} swaggerData - Parsed Swagger data.
+   * @param {string} tagName - The name of the tag.
+   * @param {AssociatedOperation[]} operations - Operations associated with this tag.
+   * @param {string} serviceInterfaceCode - The generated service interface code for context.
+   * @returns {string} The formatted prompt.
+   */
+  generatePresentationLayerPrompt(
+    swaggerData: ParsedSwaggerData,
+    tagName: string,
+    operations: AssociatedOperation[],
+    serviceInterfaceCode: string
+  ): string {
+    const hookDefinitions = operations
+      .map((op) => {
+        const pathSegments = op.path
+          .split("/")
+          .map((segment) =>
+            segment.startsWith("{")
+              ? `By${segment.slice(1, -1)}`
+              : segment.charAt(0).toUpperCase() + segment.slice(1)
+          )
+          .join("");
+        const methodName = `${op.method}${pathSegments}`;
+        const isMutation = ["post", "put", "delete", "patch"].includes(
+          op.method
+        );
+        const hookName = `use${isMutation ? "Mutate" : "Query"}${
+          methodName.charAt(0).toUpperCase() + methodName.slice(1)
+        }`;
+        const queryKeyBase = JSON.stringify([
+          `${tagName.toLowerCase()}`,
+          op.method,
+          op.path,
+        ]);
+
+        if (isMutation) {
+          return `  ${hookName}: (variables?: any) => useMutation({
+    mutationFn: () => new ${tagName}Service().${methodName}(variables),
+    onSuccess: (data) => { console.log('${methodName} success:', data); },
+    onError: (error) => { console.error('${methodName} error:', error); },
+  }),`;
+        } else {
+          const pathParams =
+            op.operation.parameters?.filter(
+              (p: SwaggerParameter) => p.in === "path"
+            ) || [];
+          const queryParams =
+            op.operation.parameters?.filter(
+              (p: SwaggerParameter) => p.in === "query"
+            ) || [];
+          const hasParams = pathParams.length > 0 || queryParams.length > 0;
+
+          let queryFnArgs = "";
+          let queryFnCall = `new ${tagName}Service().${methodName}()`;
+          if (hasParams) {
+            const paramNames = [...pathParams, ...queryParams].map(
+              (p) => p.name
+            );
+            if (paramNames.length > 0) {
+              queryFnArgs = `(${paramNames.join(", ")}: any)`;
+              queryFnCall = `new ${tagName}Service().${methodName}(${paramNames.join(
+                ", "
+              )})`;
+            }
+          }
+          const queryKey = hasParams
+            ? `${queryKeyBase}, variables`
+            : queryKeyBase;
+
+          return `  ${hookName}: (${queryFnArgs}) => useQuery({
+    queryKey: ${queryKey},
+    queryFn: ${queryFnArgs} => ${queryFnCall},
+  }),`;
+        }
+      })
+      .join("\n");
+
+    const operationsList = operations
+      .map(
+        (op) =>
+          `- ${op.method.toUpperCase()} ${op.path}: ${
+            op.operation.summary || "No summary"
+          }`
+      )
+      .join("\n");
+
+    return `
+You are an expert React and React Query developer.
+
+Given the following Swagger operations for the "${tagName}" tag and the service interface:
+
+Operations:
+${operationsList}
+
+Service Interface (for reference):
+\`\`\`typescript
+${serviceInterfaceCode}
+\`\`\`
+
+Generate a set of React Query hooks for the \`${tagName}\` module.
+Create an object (e.g., \`${tagName}Presentation\`) that contains \`useQuery\` and \`useMutation\` hooks for each operation.
+- For GET operations, generate a \`useQuery\` hook.
+- For POST, PUT, DELETE, PATCH operations, generate a \`useMutation\` hook.
+Name the hooks descriptively, e.g., \`useGetResources\`, \`useCreateResource\`.
+Assume a class \`${tagName}Service\` (implementing \`I${tagName}Service\`) is available for API calls.
+For mutations, include placeholder \`onSuccess\` and \`onError\` handlers.
+For queries with parameters, include them in the query key and query function.
+
+Provide only the TypeScript code for the hooks object, no explanations or markdown code block formatting.
+Example:
+export function UserPresentation() {
+  return {
+    useGetUsers: () => useQuery({ queryKey: ['users'], queryFn: () => userService.getUsers() }),
+    useCreateUser: () => useMutation({ mutationFn: (userData) => userService.createUser(userData) }),
+  };
+}
+export function ${tagName}Presentation() {
+  return {
+${hookDefinitions}
+  };
+}
+`;
+  }
+
+  /**
+   * Helper to generate parameter string for a method signature.
+   * @param {SwaggerOperation} operation - The Swagger operation.
+   * @returns {string} The parameter string.
+   */
+  private generateMethodParams(operation: SwaggerOperation): string {
+    const pathParams = operation.parameters
+      ? operation.parameters.filter((p: SwaggerParameter) => p.in === "path")
+      : [];
+    const queryParams = operation.parameters
+      ? operation.parameters.filter((p: SwaggerParameter) => p.in === "query")
+      : [];
+    const headerParams = operation.parameters
+      ? operation.parameters.filter((p: SwaggerParameter) => p.in === "header")
+      : [];
+    const bodyParam = operation.parameters
+      ? operation.parameters.find((p: SwaggerParameter) => p.in === "body")
+      : null;
+    const formDataParam = operation.parameters
+      ? operation.parameters.find((p: SwaggerParameter) => p.in === "formData")
+      : null;
+
+    let paramsStr: string[] = [];
+    if (pathParams.length > 0) {
+      paramsStr.push(
+        pathParams
+          .map(
+            (p: SwaggerParameter) =>
+              `${p.name}: ${this.mapSwaggerTypeToTs(
+                p.type || (p.schema ? p.schema.type : "string")
+              )}${p.required ? "" : "?"}`
+          )
+          .join(", ")
+      );
+    }
+    if (queryParams.length > 0) {
+      paramsStr.push(
+        queryParams
+          .map(
+            (p: SwaggerParameter) =>
+              `${p.name}: ${this.mapSwaggerTypeToTs(
+                p.type || (p.schema ? p.schema.type : "string")
+              )}${p.required ? "" : "?"}`
+          )
+          .join(", ")
+      );
+    }
+    if (headerParams.length > 0) {
+      paramsStr.push("customHeaders?: Record<string, string>");
+    }
+    if (bodyParam || formDataParam) {
+      const bodySchema = bodyParam ? bodyParam.schema : formDataParam?.schema;
+      const bodyTypeName = bodySchema
+        ? bodySchema.$ref
+          ? bodySchema.$ref.split("/").pop()
+          : bodySchema.type || "any"
+        : "any";
+      paramsStr.push(
+        `data: ${bodyTypeName}${bodyParam && !bodyParam.required ? "?" : ""}`
+      );
+    }
+    return paramsStr.join(", ");
+  }
+
+  /**
+   * Helper to generate URL path parameter string for axios calls.
+   * @param {SwaggerOperation} operation - The Swagger operation.
+   * @returns {string} The URL path parameters string (e.g., \`/${id}\`).
+   */
+  private generateUrlPathParams(operation: SwaggerOperation): string {
+    const pathParams = operation.parameters
+      ? operation.parameters.filter((p: SwaggerParameter) => p.in === "path")
+      : [];
+    if (pathParams.length === 0) {
+      return "";
+    }
+    return pathParams.map((p: SwaggerParameter) => `/\${${p.name}}`).join("");
+  }
+
+  /**
+   * Helper to generate axios config object for requests.
+   * @param {SwaggerOperation} operation - The Swagger operation.
+   * @param {string} consumes - The content type for the request.
+   * @returns {string} The axios config string.
+   */
+  private generateAxiosConfig(
+    operation: SwaggerOperation,
+    consumes: string
+  ): string {
+    const hasBodyOrFormData =
+      operation.parameters?.some(
+        (p: SwaggerParameter) => p.in === "body" || p.in === "formData"
+      ) || false;
+
+    if (hasBodyOrFormData && consumes.includes("form")) {
+      return `data, { headers: { 'Content-Type': '${consumes}' } }`;
+    } else if (hasBodyOrFormData) {
+      return `data, { headers: { 'Content-Type': 'application/json' } }`;
+    } else {
+      return `{ params: ${this.generateQueryParams(operation)} }`;
+    }
+  }
+
+  /**
+   * Helper to generate query parameters string for axios.
+   * @param {SwaggerOperation} operation - The Swagger operation.
+   * @returns {string} The query parameters string (e.g., \`{ params: { param1: value1 } }\`).
+   */
+  private generateQueryParams(operation: SwaggerOperation): string {
+    const queryParams = operation.parameters
+      ? operation.parameters.filter((p: SwaggerParameter) => p.in === "query")
+      : [];
+    if (queryParams.length === 0) {
+      return "{}";
+    }
+    const paramsObjStr = queryParams
+      .map((p: SwaggerParameter) => `${p.name}: ${p.name}`) // Assumes param names are valid JS identifiers
+      .join(", ");
+    return `{ ${paramsObjStr} }`;
+  }
+
+  /**
+   * Placeholder for getBaseUrl, to be implemented or assumed to be set on axios instance.
+   */
+  private getBaseUrl(): string {
+    // This could be configurable or come from an instance property.
+    // For now, return empty string assuming axios.defaults.baseURL is used.
+    return "";
   }
 
   /**
@@ -421,14 +622,8 @@ async ${methodName}(${paramsStr}): Promise<${returnType}> {
     try {
       const response = await this.client.post("/chat/completions", {
         model: this.model,
-        messages: [
-          {
-            role: "user",
-            content: prompt,
-          },
-        ],
-        // Optional: Adjust temperature, max tokens, etc.
-        temperature: 0.2, // Lower temperature for more deterministic code generation
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.2,
         max_tokens: 2048,
       });
       const generatedCode = response.data.choices[0].message.content.trim();

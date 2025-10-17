@@ -1,26 +1,32 @@
 # Active Context: Swagger to Modules
 
 ## Current Work Focus
-The immediate focus is on initializing the project structure and setting up the foundational elements of the "Swagger to Modules" tool. This includes the creation of the memory bank files, which is currently in progress.
+The focus has shifted from initial setup to implementing the core Swagger parsing logic and enhancing the code generation capabilities. The basic CLI and project structure are complete, and the next phase involves enriching the `src/parser/swagger.ts` to provide a more structured internal representation of the API, and developing more sophisticated templates in `src/generator/` and `src/templates/`.
 
 ## Recent Changes
-- Created the initial set of memory bank files: `projectbrief.md`, `productContext.md`, `systemPatterns.md`, and `techContext.md`.
-- Defined the project's core requirements, goals, and technical architecture.
+- Configured `tsconfig.json` with `resolveJsonModule` and excluded `package.json` from compilation.
+- Set up `package.json` with build/start scripts and defined the `swagger-to-modules` CLI binary.
+- Implemented the main CLI entry point (`src/index.ts`) using `yargs`, including a `generate [specPath]` command.
+- Created stub files for all main modules: `src/cli/generate.ts`, `src/parser/swagger.ts`, `src/generator/module.ts`, `src/templates/module.hbs`, `src/utils/template.ts`, and `src/utils/index.ts`.
+- The `generate` command now reads a Swagger JSON, uses a basic Handlebars template (`module.hbs`), and writes the output to `generated/module.ts`.
+- A sample `swagger.json` has been added for testing.
 
 ## Next Steps
-1. Complete the initialization of the memory bank by creating the `activeContext.md` and `progress.md` files.
-2. Set up the basic Node.js project structure, including `package.json` and TypeScript configuration.
-3. Install initial dependencies like `@apidevtools/swagger-parser` and `handlebars`.
-4. Create the main CLI entry point.
-5. Implement the Swagger file reading and parsing logic.
+1. **Enhance Swagger Parser**: Implement detailed parsing in `src/parser/swagger.ts` to extract and normalize paths, operations, parameters, schemas, etc., from Swagger 2.0/3.0.x files into a common internal format.
+2. **Develop Code Generation Logic**: Evolve `src/generator/module.ts` and `src/templates/module.hbs` to produce well-structured, commented, and modular code (e.g., client classes, type definitions, endpoint functions) based on the parsed data.
+3. **Improve Template System**: Expand the use of Handlebars, potentially with helper functions, to allow for more flexible and powerful code generation.
+4. **Error Handling and Validation**: Implement robust error handling in the parser and CLI for invalid Swagger files or missing configurations.
+5. **Testing**: Introduce a testing framework (e.g., Jest) and write unit/integration tests.
+6. **Documentation**: Create user guides for CLI usage and configuration.
 
 ## Active Decisions and Considerations
-- **Language Choice**: TypeScript has been selected for developing the tool to leverage static typing and modern JavaScript features.
-- **CLI Framework**: `yargs` is a potential choice for the CLI framework due to its simplicity and robust feature set for command-line applications.
-- **Templating**: Handlebars will likely be used for templating, offering a good balance of power and ease of use for code generation.
-- **Project Structure**: A modular structure is planned to separate concerns, making the codebase easier to understand, maintain, and extend.
+- **CLI Structure**: The `yargs` library is being used for its simplicity and features in building the CLI. The `generate` command accepts a `specPath` argument.
+- **Templating**: Handlebars is chosen for its flexibility and the ability for users to customize templates.
+- **Project Structure**: The modular structure (`src/cli`, `src/parser`, `src/generator`, `src/templates`, `src/utils`) is actively being used.
+- **Output**: The initial output is a single `module.ts` file. Future iterations will aim for a more granular and organized output (e.g., multiple files for models, services).
 
 ## Learnings and Project Insights
-- Establishing a clear memory bank is crucial for maintaining project context, especially for a tool like this which can become complex quickly.
-- The modular architecture planned for the tool itself should facilitate its development and future enhancements.
-- Starting with a solid foundation in terms of documentation and planning will pay off as the project evolves.
+- The initial setup of TypeScript and build tools was crucial and went smoothly.
+- Using stubs for modules helped in quickly establishing the workflow and CLI integration.
+- The current basic implementation successfully demonstrates the end-to-end flow, providing a foundation for more complex features.
+- The importance of having a clear internal data model after parsing Swagger is becoming evident for the next development steps.

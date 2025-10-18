@@ -28,7 +28,7 @@ class LLMGenerator {
     baseUrl: string = "https://openrouter.ai/api/v1"
   ) {
     this.apiKey = apiKey;
-    this.model = model;
+    this.model = "deepseek/deepseek-r1:free";
     this.baseUrl = baseUrl;
     this.client = axios.create({
       baseURL: this.baseUrl,
@@ -39,6 +39,116 @@ class LLMGenerator {
         "X-Title": "Swagger to Modules Agent",
       },
     });
+  }
+
+  /**
+   * Prepares a prompt for generating a list of tags from Swagger data.
+   * @param {ParsedSwaggerData} swaggerData - Parsed Swagger data.
+   * @returns {string} The formatted prompt.
+   */
+  generateTagListPrompt(swaggerData: ParsedSwaggerData): string {
+    const allTags = new Set<string>();
+    const tagDescriptions: Record<string, string[]> = {};
+
+    // Iterate through paths and operations to gather tags and their descriptions
+    if (swaggerData.paths) {
+      Object.entries(swaggerData.paths).forEach(([path, pathItem]) => {
+        if (pathItem && typeof pathItem === "object") {
+          Object.entries(pathItem).forEach(([method, operation]) => {
+            if (
+              method &&
+              [
+                "get",
+                "post",
+                "put",
+                "delete",
+                "patch",
+                "head",
+                "options",
+              ].includes(method) &&
+              operation &&
+              typeof operation === "object" &&
+              operation.operationId
+            ) {
+              const op = operation as SwaggerOperation;
+              if (op.tags && op.tags.length > 0) {
+                op.tags.forEach((tag) => {
+                  allTags.add(tag);
+                  if (!tagDescriptions[tag]) {
+                    tagDescriptions[tag] = [];
+                  }
+                  if (op.summary) {
+                    tagDescriptions[tag].push(
+                      `${method.toUpperCase()} ${path}: ${op.summary}`
+                    );
+                  }
+                });
+              }
+              // If no tags, create a generic one based on operationId or path
+              if (!op.tags || op.tags.length === 0) {
+                const genericTag = op.operationId
+                  ? op.operationId.split("_")[0]
+                  : path.split("/")[1];
+                const tagName = genericTag
+                  ? genericTag.charAt(0).toUpperCase() + genericTag.slice(1)
+                  : "Untagged";
+                allTags.add(tagName);
+                if (!tagDescriptions[tagName]) {
+                  tagDescriptions[tagName] = [];
+                }
+                if (op.summary) {
+                  tagDescriptions[tagName].push(
+                    `${method.toUpperCase()} ${path}: ${op.summary}`
+                  );
+                } else {
+                  tagDescriptions[tagName].push(
+                    `${method.toUpperCase()} ${path}`
+                  );
+                }
+              }
+            }
+          });
+        }
+      });
+    }
+
+    const tagList = Array.from(allTags)
+      .map((tag) => {
+        const descriptions = tagDescriptions[tag] || [];
+        const uniqueDescriptions = [...new Set(descriptions)]; // Remove duplicate descriptions for the same tag
+        return `- **${tag}**\n  ${
+          uniqueDescriptions.join("\n  ") ||
+          "No specific operations found or described for this tag."
+        }`;
+      })
+      .join("\n\n");
+
+    return `
+You are an expert API analyst.
+
+Given the following Swagger data:
+
+\`\`\`json
+${JSON.stringify(swaggerData, null, 2)}
+\`\`\`
+
+Analyze the provided Swagger data and extract a comprehensive list of all unique tags.
+For each tag, provide a brief description summarizing the kind of operations typically associated with it. You can infer this from the 'summary' or 'description' fields of the operations under each tag.
+
+Present the output as a numbered list, where each item is the tag name followed by its description.
+If a tag has no operations or descriptions clearly associated with it, you can state that.
+
+Example Output:
+1. **User Management**
+   - GET /users: Retrieves a list of users.
+   - POST /users: Creates a new user.
+2. **Product Catalog**
+   - GET /products: Lists all products.
+   - GET /products/{id}: Fetches a specific product.
+
+Tags:
+${tagList}
+`;
   }
 
   /**

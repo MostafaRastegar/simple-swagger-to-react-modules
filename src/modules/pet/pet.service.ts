@@ -1,82 +1,36 @@
-import { endpoints } from "../../constants/endpoints";
+import { IPetService } from './domains/Ipet.service';
+import { Pet, PetCreateParams } from './domains/models/pet';
+import { endpoints } from '../constants/endpoints';
 import {
   serviceHandler,
   request,
   requestWithoutAuth,
-} from "../../utils/request"; // Assuming a similar request utility exists
-import { IPetService } from "./domains/IPetService";
-import {
-  PetCreateParams,
-  PetUpdateParams,
-  PetUploadImageParams,
-  ApiResponse,
-} from "./domains/models/Pet";
+} from '../../utils/request';
 
 function PetService(): IPetService {
   return {
-    addPet: (pet: PetCreateParams) =>
-      serviceHandler<ApiResponse>(() =>
-        requestWithoutAuth.post(endpoints.PET.ADD_PET(), pet)
+    uploadFile: (petId: number) =>
+      serviceHandler<Pet>(() =>
+        request.post(endpoints.PET.uploadFile(petId), body),
       ),
-
-    updatePet: (pet: PetUpdateParams) =>
-      serviceHandler<ApiResponse>(() =>
-        request.put(endpoints.PET.UPDATE_PET(), pet)
+    add: (body: Record<string, any>) =>
+      serviceHandler<Pet>(() => request.post(endpoints.PET.add(), body)),
+    update: (body: Record<string, any>) =>
+      serviceHandler<Pet>(() => request.put(endpoints.PET.update(), body)),
+    findsByStatus: (status: Array<'available' | 'pending' | 'sold'>) =>
+      serviceHandler<Pet>(() =>
+        request.get(endpoints.PET.findsByStatus(status)),
       ),
-
-    findPetsByStatus: (status: string[]) =>
-      serviceHandler<ApiResponse>(() =>
-        request.get(endpoints.PET.FIND_PETS_BY_STATUS({ status }))
+    findsByTags: (tags: Array<string>) =>
+      serviceHandler<Pet>(() => request.get(endpoints.PET.findsByTags(tags))),
+    getById: (petId: number) =>
+      serviceHandler<Pet>(() => request.get(endpoints.PET.getById(petId))),
+    updateWithForm: (petId: number) =>
+      serviceHandler<Pet>(() =>
+        request.post(endpoints.PET.updateWithForm(petId), body),
       ),
-
-    findPetsByTags: (tags: string[]) =>
-      serviceHandler<ApiResponse>(() =>
-        request.get(endpoints.PET.FIND_PETS_BY_TAGS({ tags }))
-      ),
-
-    getPetById: (petId: number) =>
-      serviceHandler<ApiResponse>(() =>
-        request.get(endpoints.PET.GET_PET_BY_ID({ petId }))
-      ),
-
-    updatePetWithForm: (petId: number, name?: string, status?: string) =>
-      serviceHandler<ApiResponse>(() => {
-        const formData = new FormData();
-        if (name) formData.append("name", name);
-        if (status) formData.append("status", status);
-        return requestWithoutAuth.post(
-          endpoints.PET.UPDATE_PET_WITH_FORM({ petId }),
-          formData,
-          {
-            headers: {
-              "Content-Type": "application/x-www-form-urlencoded",
-            },
-          }
-        );
-      }),
-
-    deletePet: (petId: number) =>
-      serviceHandler<ApiResponse>(() =>
-        request.delete(endpoints.PET.DELETE_PET({ petId }))
-      ),
-
-    uploadImage: (petId: number, additionalMetadata?: string, file?: File) =>
-      serviceHandler<ApiResponse>(() => {
-        const formData = new FormData();
-        formData.append("file", file as File); // Ensure file is provided
-        if (additionalMetadata) {
-          formData.append("additionalMetadata", additionalMetadata);
-        }
-        return requestWithoutAuth.post(
-          endpoints.PET.UPLOAD_IMAGE({ petId }),
-          formData,
-          {
-            headers: {
-              "Content-Type": "multipart/form-data",
-            },
-          }
-        );
-      }),
+    delete: (petId: number) =>
+      serviceHandler<Pet>(() => request.delete(endpoints.PET.delete(petId))),
   };
 }
 

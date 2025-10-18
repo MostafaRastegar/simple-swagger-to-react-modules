@@ -1,5 +1,11 @@
 # Dependencies
 node_modules/
+.yarn/
+.pnp.*
+
+# Build output
+dist/
+build/
 
 # Environment variables
 .env
@@ -8,16 +14,23 @@ node_modules/
 .env.test.local
 .env.production.local
 
-# Build outputs
-dist/
-build/
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
 
 # Logs
+logs
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-lerna-debug.log*
-.pnpm-debug.log*
 
 # Runtime data
 pids
@@ -84,25 +97,3 @@ jspm_packages/
 
 # TypeScript cache
 *.tsbuildinfo
-
-# Optional REPL history
-.node_repl_history
-
-# yarn v2
-.yarn/cache
-.yarn/unplugged
-.yarn/build-state.yml
-.yarn/install-state.gz
-.pnp.*
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# OS
-.DS_Store
-Thumbs.db
-generated-frontend-module/*/*

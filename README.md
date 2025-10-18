@@ -1,189 +1,157 @@
-Perfect! I'll create a detailed implementation plan for the swagger-to-modules agent that uses an LLM (via OpenRouter) to generate the code. Here's the comprehensive plan:
+## mr-next-ddd
 
-## Implementation Plan: Swagger-to-Modules Agent with LLM Code Generation
+A real-world `DDD` implementation project comprises the same phases as any other software development project. These phases include:
 
-### Phase 1: Setup and Configuration
+Refine and refactor the domain model based on the design and development `(Continuous Integration (CI) of model concepts)`.
+Repeat the above steps using the updated domain model `(CI of domain implementation)`.
+An agile software development methodology is a great fit here because agile methodologies focus on the delivery of business value just like DDD focuses on the alignment of software system with business model. Also, using SCRUM `(for project management)` and XP `(for software development purposes)` methodologies is a good combination for managing a DDD implementation project.
 
-1. **Project Structure for the Agent**
-   - Create a `swagger-to-modules-agent` directory
-   - Initialize a Node.js project
-   - Install required dependencies:
-     - `axios` for HTTP requests to OpenRouter API
-     - `fs-extra` for file system operations
-     - `mustache` or similar for templating (optional)
-     - `commander` for CLI interface (optional)
+# Folder structures:
 
-2. **Configuration Setup**
-   - Create a `.env` file for storing OpenRouter API key
-   - Add environment variables:
-     - `OPENROUTER_API_KEY`: Your API key for OpenRouter
-     - `OPENROUTER_MODEL`: Model to use (default: "z-ai/glm-4.5-air:free")
-     - `OUTPUT_DIR`: Output directory for generated code (default: "generated-frontend")
+```
+root
+├─ src
+│ ├─ constants
+│ │ └─ endpoints.ts
+│ ├─ modules
+│   └─ user
+│      ├─ domains
+│      │ ├─ models
+│      │ │  └─ User.ts
+│      │ └─ IUserService.ts
+│      ├─ user.presentation.ts
+│      └─ user.service.ts
+|---------
 
-### Phase 2: Core Agent Implementation
 
-1. **Swagger Parser Module**
-   - Create `src/parser/swagger-parser.js`
-   - Implement functions to:
-     - Read and parse swagger.json files
-     - Extract tags, paths, and definitions
-     - Generate TypeScript interface definitions
-     - Create operation mappings
+```
 
-2. **LLM Code Generator Module**
-   - Create `src/generator/llm-generator.js`
-   - Implement functions to:
-     - Prepare prompts for the LLM based on parsed swagger data
-     - Send requests to OpenRouter API
-     - Process and format generated code
-     - Handle rate limiting and errors
+# Domain Layer
 
-3. **File System Writer Module**
-   - Create `src/writer/file-writer.js`
-   - Implement functions to:
-     - Create directory structures
-     - Write generated TypeScript files
-     - Create utility files
-     - Generate package.json and tsconfig.json
+The domain layer contains the business logic of the application.
+It includes the domain model `(models)` and the `service` interface . <br/>
+The `domain model` encapsulates the business rules and the `service` interface defines the contract for interacting with the data source.
 
-### Phase 3: LLM Prompt Engineering
+```
+├─ domains
+│ ├─ models
+│ │  └─ User.ts
+│ └─ IUserService.ts
+```
 
-1. **Interface Generation Prompts**
-   - Create prompts for generating TypeScript interfaces from swagger definitions
-   - Include examples of how to map swagger types to TypeScript
+- user/domains/models/User.ts
 
-2. **Service Layer Prompts**
-   - Create prompts for generating service classes
-   - Include axios request patterns
-   - Include error handling templates
+```ts
+export interface User {
+  email: string;
+  username: string;
+  bio?: string;
+  image?: string;
+  token: string;
+}
+```
 
-3. **Presentation Layer Prompts**
-   - Create prompts for generating React Query hooks
-   - Include mutation and query patterns
-   - Include parameter handling
+- user/domains/IUserService.ts
 
-### Phase 4: Main Application Flow
+```ts
+export interface IUserService {
+  update(body: UserUpdateParams): Promise<ResponseObject<UserUpdate>>;
+  findByToken(): Promise<ResponseObject<UserCurrent>>;
+  findByEmailAndPassword(
+    body: UserLoginParams,
+  ): Promise<ResponseObject<UserCurrent>>;
+  create(body: UserCreateParams): Promise<ResponseObject<UserCreate>>;
+}
+```
 
-1. **CLI Interface**
-   - Create `index.js` as entry point
-   - Implement command line argument parsing
-   - Allow specifying swagger file path
-   - Allow specifying output directory
+# Application Layer
 
-2. **Main Generator Function**
-   - Implement the main `generateProject()` function
-   - Coordinate between parser, LLM generator, and file writer
-   - Handle errors and progress reporting
+The application layer contains the application services `(services)` and the data transfer objects `(dtos)`.<br/>
+The application services encapsulate the `use-cases` of the application and the data transfer objects shape the data for the client-side.
 
-### Phase 5: Implementation Details
 
-1. **LLM Integration**
-   - Set up HTTP client for OpenRouter API
-   - Implement request batching for efficiency
-   - Add retry logic for failed requests
-   - Implement response parsing and validation
+```
+└─ user
+  ├─ ...
+  ├─ User.service.ts
+```
 
-2. **Code Generation Workflow**
-   - For each tag in swagger:
-     - Generate models/interfaces
-     - Generate service interface
-     - Generate service implementation
-     - Generate React Query hooks
-   - Generate utility files
-   - Generate configuration files
+- user/User.service.ts
 
-3. **Error Handling**
-   - Implement robust error handling for:
-     - Invalid swagger files
-     - LLM API failures
-     - File system errors
-     - TypeScript validation errors
+```ts
+function UserService(): IUserService {
+  return {
+    findByToken: () =>
+      serviceHandler(() =>
+        request.get(endpoints.USERS.GET_USER()),
+      ),
 
-### Phase 6: Testing and Validation
+    findByEmailAndPassword: (body) =>
+      serviceHandler(() =>
+        requestWithoutAuth.post(endpoints.USERS.POST_USERS_LOGIN(), body),
+      ),
+    update: (body) =>
+      serviceHandler(() =>
+        request.put(endpoints.USERS.PUT_USER(), body),
+      ),
 
-1. **Unit Tests**
-   - Test swagger parser functionality
-   - Test LLM prompt generation
-   - Test file system operations
+    create: (body) =>
+      serviceHandler(() =>
+        requestWithoutAuth.post(endpoints.USERS.POST_USERS(), body),
+      ),
+  };
+}
+```
 
-2. **Integration Tests**
-   - Test end-to-end generation with sample swagger files
-   - Validate generated TypeScript code
-   - Test React Query hooks
+# Presentation Layer
 
-### Phase 7: Documentation and Examples
+The presentation layer contains the controllers `(presentation)` and the query library `(reactQuery, SWR, ...)`. <br/>
+The controllers handle the user interactions and delegate the work to the application layer. <br/>
+`For example:` the `React Query` handles the state management and the data fetching for the React components.
 
-1. **Create README.md**
-   - Document usage instructions
-   - Provide examples
-   - Explain configuration options
+```
+└─ user
+  ├─ ...
+  ├─ User.presentation.ts
 
-2. **Example Swagger Files**
-   - Include sample swagger files for testing
-   - Document expected outputs
+```
 
-### Phase 8: Optimization and Enhancements
+- user/User.presentation.ts
 
-1. **Performance Improvements**
-   - Implement caching for LLM responses
-   - Optimize prompt engineering
-   - Parallelize generation where possible
+```ts
+const userService = UserService();
 
-2. **Additional Features**
-   - Custom templates support
-   - Plugin system for custom generators
-   - Validation of generated code
+export function UserPresentation() {
+  return {
+    useGetCurrentUser: () =>
+      useQuery({
+        queryKey: ['user'],
+        queryFn: () => userService.getCurrentUser(),
+      }),
 
-### Implementation Steps
+    useUserLogin: () => {
+      const router = useRouter();
+      const searchParams = useSearchParams();
+      return useMutation({
+        mutationFn: () => {
+          const rawFormData: UserLoginParams = {
+            user: {
+              email: '{{EMAIL}}',
 
-1. **Set up the project structure**
-   ```
-   swagger-to-modules-agent/
-   ├── src/
-   │   ├── parser/
-   │   │   └── swagger-parser.js
-   │   ├── generator/
-   │   │   └── llm-generator.js
-   │   ├── writer/
-   │   │   └── file-writer.js
-   │   └── utils/
-   │       └── http-client.js
-   ├── templates/
-   │   ├── interface.mustache
-   │   ├── service.mustache
-   │   └── hook.mustache
-   ├── test/
-   ├── .env.example
-   ├── .gitignore
-   ├── package.json
-   └── README.md
-   ```
-
-2. **Implement the Swagger Parser**
-   - Parse swagger.json
-   - Extract tags, paths, and definitions
-   - Convert to TypeScript-friendly format
-
-3. **Implement the LLM Generator**
-   - Set up OpenRouter API integration
-   - Create prompt templates
-   - Implement code generation logic
-
-4. **Implement the File Writer**
-   - Create directory structure
-   - Write generated files
-   - Handle TypeScript compilation
-
-5. **Create the Main Application**
-   - Implement CLI interface
-   - Coordinate between modules
-   - Handle errors and progress
-
-6. **Test and Validate**
-   - Run unit tests
-   - Test with sample swagger files
-   - Validate generated code
-
-This plan ensures a robust, maintainable, and extensible implementation of the swagger-to-modules agent that leverages LLM capabilities for code generation.
-
-Would you like me to proceed with implementing this solution?
+              password: '{{PASSWORD}}',
+            },
+          };
+          return userService.login(rawFormData);
+        },
+        onSuccess(response) {
+          console.log('onSuccess :>> ', response);
+          const nextUrl = searchParams.get('next');
+          router.push(nextUrl ?? '/');
+        },
+        onError(error) {
+          console.log('error :>> ', error);
+        },
+      });
+    },
+}
+```

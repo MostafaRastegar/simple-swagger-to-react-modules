@@ -5,28 +5,28 @@ const BASE_URL = 'https://petstore.swagger.io/v2';
 
 export const endpoints = {
   PET: {
-    uploadFile: (petId) => {
+    UPLOAD_FILE: (petId: number) => {
       return `${BASE_URL}/pet/${petId}/uploadImage`;
     },
-    add: () => {
+    ADD: () => {
       return `${BASE_URL}/pet`;
     },
-    update: () => {
+    UPDATE: () => {
       return `${BASE_URL}/pet`;
     },
-    findsByStatus: (status) => {
-      return `${BASE_URL}/pet/findByStatus?status=${status}`;
+    FINDS_BY_STATUS: (status: Array<'available' | 'pending' | 'sold'>) => {
+      return `${BASE_URL}/pet/findByStatus`;
     },
-    findsByTags: (tags) => {
-      return `${BASE_URL}/pet/findByTags?tags=${tags}`;
+    FINDS_BY_TAGS: (tags: Array<string>) => {
+      return `${BASE_URL}/pet/findByTags`;
     },
-    getById: (petId) => {
+    GET_BY_ID: (petId: number) => {
       return `${BASE_URL}/pet/${petId}`;
     },
-    updateWithForm: (petId) => {
+    UPDATE_WITH_FORM: (petId: number) => {
       return `${BASE_URL}/pet/${petId}`;
     },
-    delete: (petId) => {
+    DELETE: (petId: number) => {
       return `${BASE_URL}/pet/${petId}`;
     },
   },

@@ -1,74 +1,92 @@
 import { PetService } from './pet.service';
 import { useQuery, useMutation } from '@tanstack/react-query';
+import { useParams } from 'next/navigation';
 // import { useRouter } from 'next/navigation';
 
-const petservice = PetService();
+const petQueryKeys = {
+  FINDS_BY_STATUS: 'pet_findsByStatus',
+  FINDS_BY_TAGS: 'pet_findsByTags',
+  GET_BY_ID: 'pet_getById',
+};
 
-export function PetPresentation() {
+// PRESENTATION LAYER
+// React Query hooks for pet
+function PetPresentation() {
+  const Service = PetService();
+  // const queryParams = useParams(); // Assuming this might be used for store_id like in stuffs-example
   return {
-    useUploadFile: (
+    usePetUploadfile: (
       variables: any,
       onSuccess?: (data: any) => void,
       onError?: (error: any) => void,
     ) =>
       useMutation({
-        mutationFn: () => petservice.uploadFile(variables.petId),
+        mutationFn: () => Service.uploadFile(variables.petId),
         onSuccess,
         onError,
       }),
-    useAdd: (
+    usePetAdd: (
       variables: any,
       onSuccess?: (data: any) => void,
       onError?: (error: any) => void,
     ) =>
       useMutation({
-        mutationFn: () => petservice.add(variables.body),
+        mutationFn: () => Service.add(variables.body),
         onSuccess,
         onError,
       }),
-    useUpdate: (
+    usePetUpdate: (
       variables: any,
       onSuccess?: (data: any) => void,
       onError?: (error: any) => void,
     ) =>
       useMutation({
-        mutationFn: () => petservice.update(variables.body),
+        mutationFn: () => Service.update(variables.body),
         onSuccess,
         onError,
       }),
-    useFindsByStatus: (variables: any) =>
-      useQuery<Pet[]>({
-        queryKey: ['pet', 'findsByStatus', variables.status],
-        queryFn: () => petservice.findsByStatus(variables.status),
-        enabled: Object.keys(variables || {}).length > 0,
+    usePetFindsbystatus: (variables: any) =>
+      useQuery({
+        queryKey: [
+          petQueryKeys.FINDS_BY_STATUS,
+          JSON.stringify(variables.status),
+        ],
+        queryFn: () => Service.findsByStatus(variables.status),
+        enabled: variables.status,
       }),
-    useFindsByTags: (variables: any) =>
-      useQuery<Pet[]>({
-        queryKey: ['pet', 'findsByTags', variables.tags],
-        queryFn: () => petservice.findsByTags(variables.tags),
-        enabled: Object.keys(variables || {}).length > 0,
+    usePetFindsbytags: (variables: any) =>
+      useQuery({
+        queryKey: [petQueryKeys.FINDS_BY_TAGS, JSON.stringify(variables.tags)],
+        queryFn: () => Service.findsByTags(variables.tags),
+        enabled: variables.tags,
       }),
-    useGetById: (variables: any) =>
-      useQuery<Pet[]>({
-        queryKey: ['pet', 'getById', variables.petId],
-        queryFn: () => petservice.getById(variables.petId),
-        enabled: Object.keys(variables || {}).length > 0,
+    usePetGetbyid: (variables: any) =>
+      useQuery({
+        queryKey: [petQueryKeys.GET_BY_ID, JSON.stringify(variables.petId)],
+        queryFn: () => Service.getById(variables.petId),
+        enabled: variables.petId,
       }),
-    useUpdateWithForm: (
+    usePetUpdatewithform: (
       variables: any,
       onSuccess?: (data: any) => void,
       onError?: (error: any) => void,
     ) =>
       useMutation({
-        mutationFn: () => petservice.updateWithForm(variables.petId),
+        mutationFn: () => Service.updateWithForm(variables.petId),
         onSuccess,
         onError,
       }),
-    useDelete: (variables: any) =>
-      useQuery<Pet[]>({
-        queryKey: ['pet', 'delete', variables.petId],
-        queryFn: () => petservice.delete(variables.petId),
-        enabled: Object.keys(variables || {}).length > 0,
+    usePetDelete: (
+      variables: any,
+      onSuccess?: (data: any) => void,
+      onError?: (error: any) => void,
+    ) =>
+      useMutation({
+        mutationFn: () => Service.delete(variables.petId),
+        onSuccess,
+        onError,
       }),
   };
 }
+
+export { PetPresentation };

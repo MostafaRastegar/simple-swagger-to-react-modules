@@ -201,7 +201,7 @@ async function generateModelFiles(modelsDir, moduleName, definitions) {
 
   const finalContent = await formatCode(allModelContent);
   await fs.writeFile(
-    path.join(modelsDir, `${moduleName.toLowerCase()}.ts`),
+    path.join(modelsDir, `${mainModelName}.ts`), // Changed to capitalized
     finalContent
   );
 }
@@ -284,12 +284,13 @@ async function generateServiceInterface(
   const interfaceName = `I${moduleName.charAt(0).toUpperCase() + moduleName.slice(1)}Service`;
   const modelName = moduleName.charAt(0).toUpperCase() + moduleName.slice(1);
   const requestDtoName = `${modelName}CreateParams`;
-  const responseDtoName = `${modelName}Response`;
+  const responseTypeName = "ResponseObject";
 
   let methodsTs = "";
   const paths = swaggerJson.paths || {};
   const basePath = swaggerJson.basePath || "";
   const mainModelName = modelName;
+  const definitions = swaggerJson.definitions || {};
 
   for (const [pathUrl, pathItem] of Object.entries(paths)) {
     const effectivePath = pathUrl.startsWith("/")
@@ -312,35 +313,42 @@ async function generateServiceInterface(
 
           let paramsTs = "";
           const allParams = operation.parameters || [];
+          const pathParams = allParams.filter((p) => p.in === "path");
+          const queryParams = allParams.filter((p) => p.in === "query");
           const bodyParam = allParams.find((p) => p.in === "body");
 
           // Handle path and query parameters
           for (const param of allParams) {
             if (param.in === "path" || param.in === "query") {
-              const paramType = mapSwaggerTypeToTs(
-                param,
-                swaggerJson.definitions || {}
-              );
+              const paramType = mapSwaggerTypeToTs(param, definitions);
               const isOptional = !param.required;
+              // Use original swagger param name for the interface
               paramsTs += `${param.name}${isOptional ? "?" : ""}: ${paramType}, `;
             }
           }
 
           // Handle body parameter
           if (bodyParam) {
-            const bodyType = mapSwaggerTypeToTs(
-              bodyParam.schema,
-              swaggerJson.definitions || {}
-            );
-            paramsTs += `body: ${bodyType}, `;
+            const bodyType = mapSwaggerTypeToTs(bodyParam.schema, definitions);
+            // Check if the bodyType is a known definition and use it directly
+            // This assumes that the body schema refers to a specific model or DTO
+            if (definitions[bodyType] && bodyType !== mainModelName) {
+              // If it's a different model, use it directly
+              paramsTs += `body: ${bodyType}, `;
+            } else if (bodyType === mainModelName || requestDtoName) {
+              // If it's the main model or a create DTO, use the DTO
+              paramsTs += `body: ${requestDtoName}, `;
+            } else {
+              // Fallback to a generic type if no specific DTO is found
+              paramsTs += `body: Record<string, any>, `;
+            }
           }
 
-          // Remove trailing comma and space
           if (paramsTs.endsWith(", ")) {
             paramsTs = paramsTs.slice(0, -2);
           }
 
-          let returnType = "Promise<any>";
+          let returnType = `Promise<${responseTypeName}<${mainModelName}>>`;
           const successResponse =
             operation.responses["200"]?.schema ||
             operation.responses.default?.schema;
@@ -348,13 +356,14 @@ async function generateServiceInterface(
           if (successResponse) {
             const resolvedType = mapSwaggerTypeToTs(
               successResponse,
-              swaggerJson.definitions || {}
+              definitions
             );
-            // If it's an array, the service might return an array of items
             if (successResponse.type === "array") {
-              returnType = `Promise<Array<${resolvedType}>>`;
+              // For array responses, use Array<T> for now
+              // Can be enhanced to use PaginationList<T> if needed
+              returnType = `Promise<${responseTypeName}<Array<${resolvedType}>>>`;
             } else {
-              returnType = `Promise<${resolvedType}>`;
+              returnType = `Promise<${responseTypeName}<${resolvedType}>>`;
             }
           }
 
@@ -369,13 +378,13 @@ async function generateServiceInterface(
   }
 
   const content =
-    `import { ${requestDtoName}, ${mainModelName} } from './models/${moduleName}';\n` +
-    `// Assuming ${responseDtoName} might be used for wrapped responses, adjust if needed\n` +
-    `// import { ${responseDtoName} } from './models/${moduleName}';\n\n` +
+    `import { ${requestDtoName}, ${mainModelName} } from './models/${mainModelName}';\n` +
+    `import { ${responseTypeName} } from 'papak/_modulesTypes';\n` +
+    `\n` +
     `export interface ${interfaceName} {\n${methodsTs}}\n`;
   const finalContent = await formatCode(content);
   await fs.writeFile(
-    path.join(domainsDir, `I${moduleName}.service.ts`),
+    path.join(domainsDir, `${interfaceName}.ts`),
     finalContent
   );
 }
@@ -391,6 +400,8 @@ async function generateServiceImplementation(
   const modelName = moduleName.charAt(0).toUpperCase() + moduleName.slice(1);
   const moduleDirName = moduleName.toLowerCase();
   const mainModelName = modelName;
+  const moduleConstantName = moduleName.toUpperCase();
+  const requestDtoName = `${modelName}CreateParams`;
 
   let serviceMethodsTs = "";
   const paths = swaggerJson.paths || {};
@@ -412,6 +423,11 @@ async function generateServiceImplementation(
           const operationId =
             operation.operationId ||
             `${method}_${pathUrl.replace(/\//g, "_").replace(/\{|\}/g, "")}`;
+          // Convert methodName to UPPER_SNAKE_CASE for endpoint constants
+          const endpointMethodName = operationId
+            .replace(new RegExp(moduleName, "i"), "")
+            .replace(/([a-z])([A-Z])/g, "$1_$2")
+            .toUpperCase();
           const methodName = camelize(
             operationId.replace(new RegExp(moduleName, "i"), "")
           );
@@ -421,30 +437,13 @@ async function generateServiceImplementation(
           const queryParams = allParams.filter((p) => p.in === "query");
           const bodyParam = allParams.find((p) => p.in === "body");
 
-          let paramSignature = "";
-          const paramNames = [];
+          const paramNamesForEndpoint = []; // For passing to endpoint functions
 
           for (const param of allParams) {
             if (param.in === "path" || param.in === "query") {
-              const paramType = mapSwaggerTypeToTs(param, allDefinitions);
-              const isOptional = !param.required;
-              paramSignature += `${param.name}${isOptional ? "?" : ""}: ${paramType}, `;
-              paramNames.push(param.name);
+              const paramName = param.name; // Keep original swagger param name
+              paramNamesForEndpoint.push(paramName);
             }
-          }
-
-          if (bodyParam) {
-            const bodyType = mapSwaggerTypeToTs(
-              bodyParam.schema,
-              allDefinitions
-            );
-            paramSignature += `body: ${bodyType}, `;
-            paramNames.push("body");
-          }
-
-          // Remove trailing comma and space
-          if (paramSignature.endsWith(", ")) {
-            paramSignature = paramSignature.slice(0, -2);
           }
 
           const authRequired =
@@ -457,16 +456,26 @@ async function generateServiceImplementation(
               ));
 
           let requestCall = "";
+          const endpointFnCall = `endpoints.${moduleConstantName}.${endpointMethodName}(${paramNamesForEndpoint.join(", ")})`;
+
           if (method === "get" || method === "delete") {
-            requestCall = `request.${method}(endpoints.${moduleName.toUpperCase()}.${methodName}(${paramNames.join(", ")}))`;
+            const options =
+              queryParams.length > 0
+                ? `{ params: { ${queryParams.map((p) => `${p.name}: ${p.name}`).join(", ")} } }`
+                : "{}";
+            requestCall = `request().${method}(${endpointFnCall}, ${options})`;
           } else if (method === "post" || method === "put") {
-            requestCall = `request.${method}(endpoints.${moduleName.toUpperCase()}.${methodName}(${paramNames.filter((p) => p !== "body").join(", ")}), body)`;
+            requestCall = `request().${method}(${endpointFnCall}${bodyParam ? ", body" : ""})`;
           }
 
           if (authRequired) {
-            serviceMethodsTs += `  ${methodName}: (${paramSignature}) =>\n      serviceHandler<${mainModelName}>(() => ${requestCall}),\n`;
+            serviceMethodsTs += `  ${methodName}: (body) =>\n      serviceHandler(() => ${requestCall}),\n`;
           } else {
-            serviceMethodsTs += `  ${methodName}: (${paramSignature}) =>\n      serviceHandler<${mainModelName}>(() => requestWithoutAuth.${method}(endpoints.${moduleName.toUpperCase()}.${methodName}(${paramNames.filter((p) => p !== "body").join(", ")}), body)),\n`;
+            let requestCallWithoutAuth = requestCall.replace(
+              "request()",
+              "requestWithoutAuth"
+            );
+            serviceMethodsTs += `  ${methodName}: (body) =>\n      serviceHandler(() => ${requestCallWithoutAuth}),\n`;
           }
         }
       }
@@ -478,10 +487,11 @@ async function generateServiceImplementation(
   }
 
   const content =
-    `import { ${interfaceName} } from './domains/I${moduleName}.service';\n` +
-    `import { ${mainModelName}, ${mainModelName}CreateParams } from './domains/models/${moduleName}';\n` +
+    `import { ${interfaceName} } from './domains/${interfaceName}';\n` +
+    `import { ${mainModelName}, ${requestDtoName} } from './domains/models/${mainModelName}';\n` +
     `import { endpoints } from '../constants/endpoints';\n` +
-    `import { serviceHandler, request, requestWithoutAuth } from '../../utils/request';\n\n` +
+    `import { serviceHandler, request, requestWithoutAuth } from 'papak/helpers/serviceHandler';\n` +
+    `\n` +
     `function ${serviceName}(): ${interfaceName} {\n` +
     `  return {\n${serviceMethodsTs}\n  };\n` +
     `}\n\n` +
@@ -501,11 +511,16 @@ async function generatePresentationHooks(
   const serviceName = `${moduleName.charAt(0).toUpperCase() + moduleName.slice(1)}Service`;
   const modelName = moduleName.charAt(0).toUpperCase() + moduleName.slice(1);
   const moduleDirName = moduleName.toLowerCase();
+  const mainModelName = modelName; // For useQuery type hint
 
   let hookMethodsTs = "";
   const paths = swaggerJson.paths || {};
   const basePath = swaggerJson.basePath || "";
-  const mainModelName = modelName;
+  // const mainModelName = modelName; // Already defined
+
+  // Define query keys for React Query, similar to stuffs-example
+  let queryKeysTs = `const ${moduleName}QueryKeys = {\n`;
+  const processedOperationsForQueryKeys = new Set();
 
   for (const [pathUrl, pathItem] of Object.entries(paths)) {
     const effectivePath = pathUrl.startsWith("/")
@@ -522,60 +537,151 @@ async function generatePresentationHooks(
           const operationId =
             operation.operationId ||
             `${method}_${pathUrl.replace(/\//g, "_").replace(/\{|\}/g, "")}`;
-          const hookName = `use${camelize(operationId.replace(new RegExp(moduleName, "i"), "")).replace(/^./, (str) => str.toUpperCase())}`;
-          const methodName = camelize(
+
+          // Use a more descriptive hook name based on operationId
+          const hookNameSuffix = operationId
+            .replace(new RegExp(moduleName, "i"), "")
+            .replace(/([a-z])([A-Z])/g, "$1_$2") // Add underscore before capital letters
+            .toLowerCase(); // Convert to lowercase for consistency
+          const hookName = `use${moduleName.charAt(0).toUpperCase() + moduleName.slice(1)}${hookNameSuffix.charAt(0).toUpperCase() + hookNameSuffix.slice(1).replace(/_/g, "")}`;
+
+          const isMutation = !["get"].includes(method);
+          const originalMethodName = camelize(
             operationId.replace(new RegExp(moduleName, "i"), "")
           );
-          const isMutation = !["get", "delete"].includes(method);
+
+          if (isMutation) {
+            // For mutations, define a query key if it's a specific item operation (e.g., update, delete)
+            if (
+              originalMethodName.includes("ById") ||
+              originalMethodName.includes("ByStatus") ||
+              originalMethodName.includes("ByTags")
+            ) {
+              const queryKeyName = originalMethodName
+                .replace(/([A-Z])/g, "_$1")
+                .toUpperCase();
+              if (!processedOperationsForQueryKeys.has(queryKeyName)) {
+                queryKeysTs += `  ${queryKeyName}: '${moduleName}_${originalMethodName}',\n`;
+                processedOperationsForQueryKeys.add(queryKeyName);
+              }
+            }
+          } else {
+            // For queries, define a query key
+            const queryKeyName = originalMethodName
+              .replace(/([A-Z])/g, "_$1")
+              .toUpperCase();
+            if (!processedOperationsForQueryKeys.has(queryKeyName)) {
+              queryKeysTs += `  ${queryKeyName}: '${moduleName}_${originalMethodName}',\n`;
+              processedOperationsForQueryKeys.add(queryKeyName);
+            }
+          }
+        }
+      }
+    }
+  }
+  queryKeysTs += "};\n\n";
+
+  for (const [pathUrl, pathItem] of Object.entries(paths)) {
+    const effectivePath = pathUrl.startsWith("/")
+      ? pathUrl.substring(1)
+      : pathUrl;
+    const pathSegments = effectivePath.split("/");
+    const relevantSegmentIndex = basePath
+      ? pathSegments.findIndex((seg) => seg === moduleName.split("/")[0])
+      : pathSegments.findIndex((seg) => seg === moduleName);
+
+    if (relevantSegmentIndex !== -1) {
+      for (const [method, operation] of Object.entries(pathItem)) {
+        if (["get", "post", "put", "delete"].includes(method)) {
+          const operationId =
+            operation.operationId ||
+            `${method}_${pathUrl.replace(/\//g, "_").replace(/\{|\}/g, "")}`;
+
+          const hookNameSuffix = operationId
+            .replace(new RegExp(moduleName, "i"), "")
+            .replace(/([a-z])([A-Z])/g, "$1_$2")
+            .toLowerCase();
+          const hookName = `use${moduleName.charAt(0).toUpperCase() + moduleName.slice(1)}${hookNameSuffix.charAt(0).toUpperCase() + hookNameSuffix.slice(1).replace(/_/g, "")}`;
+
+          const originalMethodName = camelize(
+            operationId.replace(new RegExp(moduleName, "i"), "")
+          );
+          const isMutation = !["get"].includes(method);
 
           let hookFn = isMutation ? "useMutation" : "useQuery";
           let hookParams = "";
+          let serviceCallArgs = [];
+          const allParams = operation.parameters || [];
+
+          // Build arguments for service call
+          for (const param of allParams) {
+            if (param.in === "path" || param.in === "query") {
+              serviceCallArgs.push(`variables.${param.name}`);
+            } else if (param.in === "body") {
+              serviceCallArgs.push(`variables.body`);
+            }
+          }
+
+          const serviceCall = `Service.${originalMethodName}(${serviceCallArgs.join(", ")})`;
 
           if (isMutation) {
-            let serviceCallArgs = [];
-            const allParams = operation.parameters || [];
-
-            for (const param of allParams) {
-              if (param.in === "path" || param.in === "query") {
-                serviceCallArgs.push(`variables.${param.name}`);
-              } else if (param.in === "body") {
-                serviceCallArgs.push(`variables.body`);
-              }
-            }
-
-            const serviceCall = `${serviceName.toLowerCase()}.${methodName}(${serviceCallArgs.join(", ")})`;
             const mutationFnString = `mutationFn: () => ${serviceCall}`;
             const onSuccessString = "onSuccess";
             const onErrorString = "onError";
             hookParams = `{ ${mutationFnString}, ${onSuccessString}, ${onErrorString} }`;
 
             hookMethodsTs +=
-              `  ${hookName}: (variables: any, onSuccess?: (data: any) => void, onError?: (error: any) => void) => \n` +
-              `    useMutation(${hookParams}),\n`;
+              `    ${hookName}: (variables: any, onSuccess?: (data: any) => void, onError?: (error: any) => void) => \n` +
+              `      useMutation(${hookParams}),\n`;
           } else {
-            let queryKey = `['${moduleName}', '${methodName}'`;
-            const allParams = operation.parameters || [];
-            const queryArgs = [];
+            // For queries, determine queryKey and queryFn
+            let queryKeyArray = `[${moduleName}QueryKeys.`;
+            const queryKeySuffix = originalMethodName
+              .replace(/([A-Z])/g, "_$1")
+              .toUpperCase();
+            queryKeyArray += `${queryKeySuffix}`;
 
-            for (const param of allParams) {
-              if (param.in === "path" || param.in === "query") {
-                queryKey += `, variables.${param.name}`;
-                queryArgs.push(`variables.${param.name}`);
+            // Add path/query params to queryKey for uniqueness
+            const pathQueryParams = allParams.filter(
+              (p) => p.in === "path" || p.in === "query"
+            );
+            if (pathQueryParams.length > 0) {
+              queryKeyArray += `, ${pathQueryParams.map((p) => `JSON.stringify(variables.${p.name})`).join(", ")}`;
+            }
+            queryKeyArray += `]`;
+
+            const queryFnString = `queryFn: () => ${serviceCall}`;
+
+            let enabledCondition = "enabled: true"; // Default
+            if (
+              pathQueryParams.length > 0 ||
+              allParams.some((p) => p.in === "body")
+            ) {
+              // Enable if there are variables that are required for the query
+              const requiredParamNames = allParams
+                .filter((p) => p.required)
+                .map((p) => `variables.${p.name}`);
+              if (requiredParamNames.length > 0) {
+                enabledCondition = `enabled: ${requiredParamNames.join(" && ")}`;
+              } else if (allParams.length > 0) {
+                // If params exist but none are strictly required
+                enabledCondition = `enabled: Object.keys(variables || {}).length > 0`;
               }
             }
-            queryKey += "]";
-            const args = queryArgs.join(", ");
-            const queryFn = `queryFn: () => ${serviceName.toLowerCase()}.${methodName}(${args})`;
 
-            let enabled = "enabled: true";
-            if (allParams.some((p) => p.in === "path" || p.in === "query")) {
-              enabled = `enabled: Object.keys(variables || {}).length > 0`;
+            hookParams = `{ queryKey: ${queryKeyArray}, ${queryFnString}, ${enabledCondition} }`;
+
+            // Determine type for useQuery. If response is an array, use Array<T>, else T.
+            // This is a simplification; ideally, infer from operation.responses["200"].schema.type
+            let queryGenericType = mainModelName;
+            const successResponse = operation.responses["200"]?.schema;
+            if (successResponse && successResponse.type === "array") {
+              queryGenericType = `Array<${mainModelName}>`;
             }
-            hookParams = `{ queryKey: ${queryKey}, ${queryFn}, ${enabled} }`;
 
             hookMethodsTs +=
-              `  ${hookName}: (variables: any) => \n` +
-              `    useQuery<${mainModelName}[]>(${hookParams}),\n`;
+              `    ${hookName}: (variables: any) => \n` +
+              `      useQuery(${hookParams}),\n`;
           }
         }
       }
@@ -589,11 +695,18 @@ async function generatePresentationHooks(
   const content =
     `import { ${serviceName} } from './${moduleDirName}.service';\n` +
     `import { useQuery, useMutation } from '@tanstack/react-query';\n` +
+    // `import { useSearchParamsToObject } from 'papak/utils/useSearchParamsToObject';\n` + // Removed unused import
+    `import { useParams } from 'next/navigation';\n` +
     `// import { useRouter } from 'next/navigation';\n\n` +
-    `const ${serviceName.toLowerCase()} = ${serviceName}();\n\n` +
-    `export function ${moduleName.charAt(0).toUpperCase() + moduleName.slice(1)}Presentation() {\n` +
+    `${queryKeysTs}` +
+    `// PRESENTATION LAYER\n` +
+    `// React Query hooks for ${moduleName}\n` +
+    `function ${moduleName.charAt(0).toUpperCase() + moduleName.slice(1)}Presentation() {\n` +
+    `  const Service = ${serviceName}();\n` +
+    `  // const queryParams = useParams(); // Assuming this might be used for store_id like in stuffs-example\n` + // Commented out if not used
     `  return {\n${hookMethodsTs}\n  };\n` +
-    `}\n`;
+    `}\n\n` +
+    `export { ${moduleName.charAt(0).toUpperCase() + moduleName.slice(1)}Presentation };\n`;
   const finalContent = await formatCode(content, "typescript");
   await fs.writeFile(
     path.join(moduleOutputDir, `${moduleDirName}.presentation.ts`),
@@ -701,24 +814,40 @@ function generateModuleEndpointsSwagger(moduleName, swaggerJson, baseUrl) {
           const operationId =
             operation.operationId ||
             `${httpMethod}_${pathUrl.replace(/\//g, "_").replace(/\{|\}/g, "")}`;
-          const endpointName = camelize(
-            operationId.replace(new RegExp(moduleName, "i"), "")
-          );
+
+          // Convert to UPPER_SNAKE_CASE for endpoint constant names
+          // e.g., uploadFile -> UPLOAD_FILE, addPet -> ADD_PET
+          const endpointNameSuffix = operationId
+            .replace(new RegExp(moduleName, "i"), "") // Remove module name part
+            .replace(/([a-z])([A-Z])/g, "$1_$2") // Add underscore before capital letters
+            .replace(/^_+|_+$/g, "") // Remove leading/trailing underscores
+            .toUpperCase(); // Convert to uppercase
+
+          // Ensure the suffix is not empty, if operationId was just the module name
+          const finalEndpointName =
+            endpointNameSuffix || `${httpMethod}_ENDPOINT`;
 
           const allParams = operation.parameters || [];
           const pathParams = allParams.filter((p) => p.in === "path");
           const queryParams = allParams.filter((p) => p.in === "query");
 
-          // Create function signature
+          // Create function signature parameters (path and query params)
           let paramNames = [];
           for (const param of allParams) {
             if (param.in === "path" || param.in === "query") {
               const isOptional = !param.required;
-              paramNames.push(`${param.name}${isOptional ? "?" : ""}`);
+              const paramType = mapSwaggerTypeToTs(
+                param,
+                swaggerJson.definitions || {}
+              );
+              // Use original swagger param name for the function signature
+              paramNames.push(
+                `${param.name}${isOptional ? "?" : ""}: ${paramType}`
+              );
             }
           }
 
-          // Create path template
+          // Create path template with BASE_URL
           let pathTemplate = pathUrl;
           if (pathParams.length > 0) {
             for (const param of pathParams) {
@@ -727,20 +856,20 @@ function generateModuleEndpointsSwagger(moduleName, swaggerJson, baseUrl) {
             }
           }
 
-          // Create query string
+          // Create query string part
           let queryString = "";
           if (queryParams.length > 0) {
-            const queryParts = queryParams.map(
-              (p) => `${p.name}=\${${p.name}}`
-            );
-            queryString = `?${queryParts.join("&")}`;
+            // Query params will be passed as an object to the request function,
+            // so they don't need to be part of the URL template function here.
+            // The URL template function should only handle path params.
           }
 
-          // Create function body
-          const functionBody = `return \`\${BASE_URL}${pathTemplate}${queryString}\`;`;
+          // Create function body for the endpoint URL generator
+          // If there are query params, they will be handled by the request options object
+          const functionBody = `return \`\${BASE_URL}${pathTemplate}\`;`;
           const functionSignature = `(${paramNames.join(", ")}) => { ${functionBody} }`;
 
-          endpointDefinitions[endpointName] = functionSignature;
+          endpointDefinitions[finalEndpointName] = functionSignature;
         }
       }
     }

@@ -1,7 +1,16 @@
+export interface PetuploadFileFormData {
+  additionalMetadata?: string;
+  file?: any;
+}
+
+export interface PetupdateWithFormFormData {
+  name?: string;
+  status?: string;
+}
+
 import { PetService } from './pet.service';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
-// import { useRouter } from 'next/navigation';
 
 const petQueryKeys = {
   FINDS_BY_STATUS: 'pet_findsByStatus',
@@ -13,20 +22,19 @@ const petQueryKeys = {
 // React Query hooks for pet
 function PetPresentation() {
   const Service = PetService();
-  // const queryParams = useParams(); // Assuming this might be used for store_id like in stuffs-example
   return {
     usePetUploadfile: (
-      variables: any,
+      variables: { petId: number; body: PetuploadFileFormData },
       onSuccess?: (data: any) => void,
       onError?: (error: any) => void,
     ) =>
       useMutation({
-        mutationFn: () => Service.uploadFile(variables.petId),
+        mutationFn: () => Service.uploadFile(variables.petId, variables.body),
         onSuccess,
         onError,
       }),
     usePetAdd: (
-      variables: any,
+      variables: { body: PetCreateParams },
       onSuccess?: (data: any) => void,
       onError?: (error: any) => void,
     ) =>
@@ -36,7 +44,7 @@ function PetPresentation() {
         onError,
       }),
     usePetUpdate: (
-      variables: any,
+      variables: { body: PetCreateParams },
       onSuccess?: (data: any) => void,
       onError?: (error: any) => void,
     ) =>
@@ -45,7 +53,9 @@ function PetPresentation() {
         onSuccess,
         onError,
       }),
-    usePetFindsbystatus: (variables: any) =>
+    usePetFindsbystatus: (variables: {
+      status: Array<'available' | 'pending' | 'sold'>;
+    }) =>
       useQuery({
         queryKey: [
           petQueryKeys.FINDS_BY_STATUS,
@@ -54,30 +64,31 @@ function PetPresentation() {
         queryFn: () => Service.findsByStatus(variables.status),
         enabled: variables.status,
       }),
-    usePetFindsbytags: (variables: any) =>
+    usePetFindsbytags: (variables: { tags: Array<string> }) =>
       useQuery({
         queryKey: [petQueryKeys.FINDS_BY_TAGS, JSON.stringify(variables.tags)],
         queryFn: () => Service.findsByTags(variables.tags),
         enabled: variables.tags,
       }),
-    usePetGetbyid: (variables: any) =>
+    usePetGetbyid: (variables: { petId: number }) =>
       useQuery({
         queryKey: [petQueryKeys.GET_BY_ID, JSON.stringify(variables.petId)],
         queryFn: () => Service.getById(variables.petId),
         enabled: variables.petId,
       }),
     usePetUpdatewithform: (
-      variables: any,
+      variables: { petId: number; body: PetupdateWithFormFormData },
       onSuccess?: (data: any) => void,
       onError?: (error: any) => void,
     ) =>
       useMutation({
-        mutationFn: () => Service.updateWithForm(variables.petId),
+        mutationFn: () =>
+          Service.updateWithForm(variables.petId, variables.body),
         onSuccess,
         onError,
       }),
     usePetDelete: (
-      variables: any,
+      variables: { petId: number },
       onSuccess?: (data: any) => void,
       onError?: (error: any) => void,
     ) =>

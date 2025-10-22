@@ -9,31 +9,29 @@ import {
 
 function PetService(): IPetService {
   return {
-    uploadFile: (body) =>
-      serviceHandler(() => request().post(endpoints.PET.UPLOAD_FILE(petId))),
+    uploadFile: (petId, body) =>
+      serviceHandler(() =>
+        request().postForm(endpoints.PET.UPLOAD_FILE(petId), body),
+      ),
     add: (body) =>
       serviceHandler(() => request().post(endpoints.PET.ADD(), body)),
     update: (body) =>
       serviceHandler(() => request().put(endpoints.PET.UPDATE(), body)),
-    findsByStatus: (body) =>
+    findsByStatus: (queryParams) =>
       serviceHandler(() =>
-        request().get(endpoints.PET.FINDS_BY_STATUS(status), {
-          params: { status: status },
-        }),
+        request().get(endpoints.PET.FINDS_BY_STATUS(), { params: queryParams }),
       ),
-    findsByTags: (body) =>
+    findsByTags: (queryParams) =>
       serviceHandler(() =>
-        request().get(endpoints.PET.FINDS_BY_TAGS(tags), {
-          params: { tags: tags },
-        }),
+        request().get(endpoints.PET.FINDS_BY_TAGS(), { params: queryParams }),
       ),
-    getById: (body) =>
+    getById: (petId) =>
       serviceHandler(() => request().get(endpoints.PET.GET_BY_ID(petId), {})),
-    updateWithForm: (body) =>
+    updateWithForm: (petId, body) =>
       serviceHandler(() =>
-        request().post(endpoints.PET.UPDATE_WITH_FORM(petId)),
+        request().postForm(endpoints.PET.UPDATE_WITH_FORM(petId), body),
       ),
-    delete: (body) =>
+    delete: (petId) =>
       serviceHandler(() => request().delete(endpoints.PET.DELETE(petId), {})),
   };
 }

@@ -121,19 +121,25 @@ function generateModuleEndpointsSwagger(moduleName, swaggerJson, baseUrl) {
       for (const [method, operation] of Object.entries(pathItem)) {
         if (["get", "post", "put", "delete"].includes(method)) {
           const httpMethod = method.toUpperCase();
-          const operationId =
-            operation.operationId ||
-            `${httpMethod}_${pathUrl.replace(/\//g, "_").replace(/\{|\}/g, "")}`;
 
-          // Convert to UPPER_SNAKE_CASE for endpoint constant names
-          const endpointNameSuffix = operationId
-            .replace(new RegExp(moduleName, "i"), "") // Remove module name part
-            .replace(/([a-z])([A-Z])/g, "$1_$2") // Add underscore before capital letters
-            .replace(/^_+|_+$/g, "") // Remove leading/trailing underscores
-            .toUpperCase(); // Convert to uppercase
+          // Process path segments for new naming convention
+          const pathSegments = pathUrl.substring(1).split("/"); // Removes leading '/' and splits
+          const processedPathSegments = pathSegments.map((segment) => {
+            if (segment.startsWith("{") && segment.endsWith("}")) {
+              // It's a path parameter, e.g., {petId} or {id}
+              const paramName = segment.slice(1, -1); // Extract 'petId' or 'id'
+              return paramName.toUpperCase(); // e.g., 'PETID' or 'ID'
+            } else {
+              // It's a regular path segment, e.g., 'pet' or 'uploadImage'
+              // Handle camelCase by inserting underscore before capital letters
+              return segment
+                .replace(/([a-z])([A-Z])/g, "$1_$2") // e.g., 'uploadImage' -> 'upload_Image'
+                .toUpperCase(); // e.g., 'UPLOAD_IMAGE'
+            }
+          });
 
-          const finalEndpointName =
-            endpointNameSuffix || `${httpMethod}_ENDPOINT`;
+          const endpointNameSuffix = processedPathSegments.join("_"); // Join with underscores
+          const finalEndpointName = `${httpMethod}_${endpointNameSuffix}`;
 
           const allParams = operation.parameters || [];
           const pathParams = allParams.filter((p) => p.in === "path");

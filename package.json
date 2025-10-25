@@ -76,7 +76,8 @@
     "yn": "^3.1.1"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "export": "node cli/cli.js generate -m $npm_config_tag -i swagger.json -o src/modules/"
   },
   "keywords": [],
   "author": "",

@@ -145,10 +145,20 @@ function generateModuleEndpointsSwagger(moduleName, swaggerJson, baseUrl) {
           const pathParams = allParams.filter((p) => p.in === "path");
           const queryParams = allParams.filter((p) => p.in === "query");
 
-          // Create function signature parameters (path and query params)
+          // Create path template with BASE_URL first
+          let pathTemplate = pathUrl;
+          if (pathParams.length > 0) {
+            for (const param of pathParams) {
+              const regex = new RegExp(`\\{${param.name}\\}`, "g");
+              pathTemplate = pathTemplate.replace(regex, `\${${param.name}}`);
+            }
+          }
+
+          // Create function signature parameters (only path params and query params actually used in URL)
           let paramNames = [];
           for (const param of allParams) {
-            if (param.in === "path" || param.in === "query") {
+            if (param.in === "path") {
+              // Path parameters are always included as they are required for URL construction
               const isOptional = !param.required;
               const paramType = mapSwaggerTypeToTs(
                 param,
@@ -157,15 +167,22 @@ function generateModuleEndpointsSwagger(moduleName, swaggerJson, baseUrl) {
               paramNames.push(
                 `${param.name}${isOptional ? "?" : ""}: ${paramType}`
               );
-            }
-          }
-
-          // Create path template with BASE_URL
-          let pathTemplate = pathUrl;
-          if (pathParams.length > 0) {
-            for (const param of pathParams) {
-              const regex = new RegExp(`\\{${param.name}\\}`, "g");
-              pathTemplate = pathTemplate.replace(regex, `\${${param.name}}`);
+            } else if (param.in === "query") {
+              // Only include query parameters if they are actually used in the URL template
+              // Check if the parameter name appears in the path template
+              if (
+                pathTemplate.includes(`{${param.name}}`) ||
+                pathTemplate.includes(`$${param.name}`)
+              ) {
+                const isOptional = !param.required;
+                const paramType = mapSwaggerTypeToTs(
+                  param,
+                  swaggerJson.definitions || {}
+                );
+                paramNames.push(
+                  `${param.name}${isOptional ? "?" : ""}: ${paramType}`
+                );
+              }
             }
           }
 

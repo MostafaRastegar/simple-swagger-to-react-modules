@@ -19,6 +19,7 @@ async function generatePresentationHooks(
   const mainModelName = modelName;
   const formDataInterfaces = {};
   const definitions = swaggerJson.definitions || {};
+  const usedTypes = new Set(); // Track types that need to be imported
 
   let hookMethodsTs = "";
   const paths = swaggerJson.paths || {};
@@ -191,10 +192,13 @@ async function generatePresentationHooks(
 
               if (definitions[bodyType] && bodyType !== mainModelName) {
                 bodyTypeName = bodyType;
+                usedTypes.add(bodyTypeName);
               } else if (bodyType === mainModelName) {
                 bodyTypeName = `${mainModelName}CreateParams`;
+                usedTypes.add(bodyTypeName);
               } else {
                 bodyTypeName = `${mainModelName}CreateParams`;
+                usedTypes.add(bodyTypeName);
               }
 
               variableProps += `body: ${bodyTypeName}, `;
@@ -376,20 +380,29 @@ async function generatePresentationHooks(
     formDataImports += `export interface ${interfaceName} {\n${props}}\n\n`;
   }
 
+  // Generate additional imports for used types
+  let additionalImports = "";
+  for (const typeName of usedTypes) {
+    if (typeName.includes("CreateParams") || definitions[typeName]) {
+      // Only import if it's a CreateParams type or defined in swagger definitions
+      additionalImports += `import { ${typeName} } from './domains/models/${mainModelName}';\n`;
+    }
+  }
+
   const content =
     `${formDataImports}` +
     `import { ${serviceName} } from './${moduleDirName}.service';\n` +
     `import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';\n` +
-    `import { useParams } from 'next/navigation';\n\n` +
+    `import { useParams } from 'next/navigation';\n` +
+    `${additionalImports}\n` +
     `${queryKeysTs}` +
     `// PRESENTATION LAYER\n` +
     `// React Query hooks for ${moduleName}\n` +
-    `function ${moduleName.charAt(0).toUpperCase() + moduleName.slice(1)}Presentation() {\n` +
+    `export function ${moduleName.charAt(0).toUpperCase() + moduleName.slice(1)}Presentation() {\n` +
     `  const Service = ${serviceName}();\n` +
     `  const queryClient = useQueryClient();\n` +
     `  return {\n${hookMethodsTs}\n  };\n` +
-    `}\n\n` +
-    `export { ${moduleName.charAt(0).toUpperCase() + moduleName.slice(1)}Presentation };\n`;
+    `}\n\n`;
   const finalContent = await formatCode(content, "typescript");
   await fs.writeFile(
     path.join(moduleOutputDir, `${moduleDirName}.presentation.ts`),

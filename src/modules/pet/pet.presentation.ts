@@ -11,6 +11,7 @@ export interface PetupdateWithFormFormData {
 import { PetService } from './pet.service';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
+import { PetCreateParams } from './domains/models/Pet';
 
 const petQueryKeys = {
   FINDS_BY_STATUS: 'pet_findsByStatus',
@@ -20,7 +21,7 @@ const petQueryKeys = {
 
 // PRESENTATION LAYER
 // React Query hooks for pet
-function PetPresentation() {
+export function PetPresentation() {
   const Service = PetService();
   const queryClient = useQueryClient();
   return {
@@ -125,5 +126,3 @@ function PetPresentation() {
     },
   };
 }
-
-export { PetPresentation };

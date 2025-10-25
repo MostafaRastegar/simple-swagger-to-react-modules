@@ -160,13 +160,27 @@ async function generateServiceImplementation(
     if (relevantSegmentIndex !== -1) {
       for (const [method, operation] of Object.entries(pathItem)) {
         if (["get", "post", "put", "delete"].includes(method)) {
+          // Process path segments for new naming convention (same as endpoint generator)
+          const pathSegments = pathUrl.substring(1).split("/"); // Removes leading '/' and splits
+          const processedPathSegments = pathSegments.map((segment) => {
+            if (segment.startsWith("{") && segment.endsWith("}")) {
+              // It's a path parameter, e.g., {petId} or {id}
+              const paramName = segment.slice(1, -1); // Extract 'petId' or 'id'
+              return paramName.toUpperCase(); // e.g., 'PETID' or 'ID'
+            } else {
+              // It's a regular path segment, e.g., 'pet' or 'uploadImage'
+              // Handle camelCase by inserting underscore before capital letters
+              return segment
+                .replace(/([a-z])([A-Z])/g, "$1_$2") // e.g., 'uploadImage' -> 'upload_Image'
+                .toUpperCase(); // e.g., 'UPLOAD_IMAGE'
+            }
+          });
+
+          const endpointNameSuffix = processedPathSegments.join("_"); // Join with underscores
+          const endpointMethodName = `${method.toUpperCase()}_${endpointNameSuffix}`;
           const operationId =
             operation.operationId ||
             `${method}_${pathUrl.replace(/\//g, "_").replace(/\{|\}/g, "")}`;
-          const endpointMethodName = operationId
-            .replace(new RegExp(moduleName, "i"), "")
-            .replace(/([a-z])([A-Z])/g, "$1_$2")
-            .toUpperCase();
           const methodName = camelize(
             operationId.replace(new RegExp(moduleName, "i"), "")
           );
@@ -202,16 +216,28 @@ async function generateServiceImplementation(
           const hasBody = bodyParam || formDataParams.length > 0;
 
           if (method === "get" || method === "delete") {
-            requestCall = `request().${method}(${endpointFnCall}, ${
-              hasQueryParams ? `{ params: queryParams }` : "{}"
-            })`;
+            if (hasQueryParams) {
+              // Pass query parameters as individual arguments
+              const queryParamsForCall = queryParams
+                .map((qp) => qp.name)
+                .join(", ");
+              requestCall = `request().${method}(${endpointFnCall}, { params: { ${queryParamsForCall} } })`;
+            } else {
+              requestCall = `request().${method}(${endpointFnCall}, {})`;
+            }
           } else if (method === "post" || method === "put") {
             if (formDataParams.length > 0) {
               requestCall = `request().${method}Form(${endpointFnCall}, body)`;
             } else {
-              requestCall = `request().${method}(${endpointFnCall}${
-                hasBody ? ", body" : ""
-              }${hasQueryParams ? ", { params: queryParams }" : ""})`;
+              if (hasQueryParams) {
+                // Pass query parameters as individual arguments
+                const queryParamsForCall = queryParams
+                  .map((qp) => qp.name)
+                  .join(", ");
+                requestCall = `request().${method}(${endpointFnCall}, body, { params: { ${queryParamsForCall} } })`;
+              } else {
+                requestCall = `request().${method}(${endpointFnCall}${hasBody ? ", body" : ""}, {})`;
+              }
             }
           }
 
@@ -221,10 +247,10 @@ async function generateServiceImplementation(
           // Always include path parameters
           pathParams.forEach((p) => paramNames.push(p.name));
 
-          // Include queryParams as single object
-          if (queryParams.length > 0) {
-            paramNames.push("queryParams");
-          }
+          // Include queryParams as individual parameters (not as an object)
+          queryParams.forEach((qp) => {
+            paramNames.push(qp.name);
+          });
 
           // Include body as single object
           if (bodyParam || formDataParams.length > 0) {
@@ -258,10 +284,9 @@ async function generateServiceImplementation(
     `import { endpoints } from '../constants/endpoints';\n` +
     `import { serviceHandler, request, requestWithoutAuth } from 'papak/helpers/serviceHandler';\n` +
     `\n` +
-    `function ${serviceName}(): ${interfaceName} {\n` +
+    `export function ${serviceName}(): ${interfaceName} {\n` +
     `  return {\n${serviceMethodsTs}\n  };\n` +
-    `}\n\n` +
-    `export { ${serviceName} };\n`;
+    `}\n\n`;
   const finalContent = await formatCode(content, "typescript");
   await fs.writeFile(
     path.join(moduleOutputDir, `${moduleDirName}.service.ts`),

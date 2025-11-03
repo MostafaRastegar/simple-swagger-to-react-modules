@@ -1,59 +1,60 @@
-# Progress - FormData Interface Architecture Fix Complete
+# Progress - Service Layer FormData Interface Fix Complete
 
-## Status: ✅ Successfully Fixed FormData Interface Generation
+## Status: ✅ Successfully Fixed Service Layer FormData Interface Generation
 
 ### Problem Resolved:
-FormData interfaces (`PetuploadFileFormData` and `PetupdateWithFormFormData`) are now correctly generated in the model layer instead of the presentation layer, fixing the DDD architecture violation.
+Service interfaces (`IPetService.ts`) now correctly use FormData interface names and import them properly, eliminating TypeScript compilation errors.
 
 ### Changes Made:
 
-#### 1. **Modified `cli/generators/modelGenerator.js`**:
-- Added `generateFormDataInterfaces()` function
-- Now accepts full `swaggerJson` instead of just `definitions`
-- Generates FormData interfaces based on operations with `formData` parameters
-- Exports FormData interfaces from `domains/models/{ModelName}.ts`
+#### **Fixed `cli/generators/serviceGenerator.js`**:
+1. **Consistent Naming**: Changed FormData interface naming to match modelGenerator
+   - Old: `PetUploadFileFormData` → New: `PetuploadFileFormData` ✅
+   - Old: `PetUpdatePetWithFormFormData` → New: `PetupdateWithFormFormData` ✅
 
-#### 2. **Updated `cli/cli.js`**:
-- Changed model generation call to pass full `swaggerJson` instead of just `definitions`
+2. **Import Management**: Added FormData interfaces to import statement
+   - Collects all FormData interface names in a Set
+   - Adds them to the import statement from `./models/Pet`
 
-#### 3. **Fixed `cli/generators/presentationGenerator.js`**:
-- Removed FormData interface generation logic
-- Added import statements for FormData interfaces from model layer
-- Now properly imports: `PetuploadFileFormData`, `PetupdateWithFormFormData`
+3. **Naming Logic**: Uses same logic as modelGenerator
+   ```javascript
+   const formDataInterface = `${mainModelName}${camelize(operationId.replace(new RegExp(moduleName, "i"), ""))}FormData`;
+   ```
 
 ### Results Verification:
 
-**✅ Pet.ts now correctly includes:**
-```typescript
-export interface PetuploadFileFormData {
-  additionalMetadata?: string;
-  file?: any;
-}
-
-export interface PetupdateWithFormFormData {
-  name?: string;
-  status?: string;
-}
-```
-
-**✅ pet.presentation.ts now correctly imports:**
+**✅ IPetService.ts now correctly includes:**
 ```typescript
 import {
+  PetCreateParams,
+  Pet,
   PetuploadFileFormData,
   PetupdateWithFormFormData,
-} from './domains/models/Pet';
+} from './models/Pet';
+
+export interface IPetService {
+  uploadFile(
+    petId: number,
+    body: PetuploadFileFormData,  // ✅ Correct
+  ): Promise<ResponseObject<ApiResponse>>;
+  updateWithForm(
+    petId: number,
+    body: PetupdateWithFormFormData,  // ✅ Correct
+  ): Promise<ResponseObject<Pet>>;
+}
 ```
 
 ### Architecture Compliance:
-- **Model Layer** (`domains/models/`): Contains all interface definitions including FormData
-- **Presentation Layer** (`*.presentation.ts`): Imports types from model layer
-- **Proper DDD separation**: Model interfaces are defined in the correct architectural layer
+- **Consistent Naming**: Service layer now uses same interface names as model layer
+- **Proper Imports**: All FormData interfaces imported from correct location
+- **Type Safety**: No more TypeScript compilation errors for undefined interfaces
 
 ### Test Results:
-- [x] Test the complete fix
-- [x] Verify FormData interfaces are in model layer
-- [x] Confirm presentation layer imports from models
-- [x] Validate proper DDD architecture compliance
+- [x] Fix service layer FormData interface naming
+- [x] Add FormData interfaces to service interface imports  
+- [x] Test service interface generation
+- [x] Verify correct FormData interface names
+- [x] Confirm proper import statements
 
 ## Summary:
-The FormData interface generation issue has been completely resolved. The architecture now follows DDD principles correctly with proper layer separation.
+The service layer FormData interface generation issue has been completely resolved. All layers now use consistent interface naming and proper import statements, ensuring type safety throughout the application.

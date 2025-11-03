@@ -26,6 +26,9 @@ async function generateServiceInterface(
   const mainModelName = modelName;
   const definitions = swaggerJson.definitions || {};
 
+  // Collect FormData interface names for import
+  const formDataInterfaceNames = new Set();
+
   for (const [pathUrl, pathItem] of Object.entries(paths)) {
     const effectivePath = pathUrl.startsWith("/")
       ? pathUrl.substring(1)
@@ -61,9 +64,11 @@ async function generateServiceInterface(
             }
           }
 
-          // Handle formData as single body object
+          // Handle formData as single body object with correct interface name
           if (formDataParams.length > 0) {
-            const formDataInterface = `Pet${operation.operationId.charAt(0).toUpperCase() + operation.operationId.slice(1)}FormData`;
+            // Use same naming logic as modelGenerator
+            const formDataInterface = `${mainModelName}${camelize(operationId.replace(new RegExp(moduleName, "i"), ""))}FormData`;
+            formDataInterfaceNames.add(formDataInterface);
             paramsTs += `body: ${formDataInterface}, `;
           }
 
@@ -123,8 +128,18 @@ async function generateServiceInterface(
     methodsTs = `  // No methods generated for ${moduleName}. Check Swagger paths.\n`;
   }
 
+  // Generate FormData interface imports
+  const formDataImports = [];
+  for (const interfaceName of formDataInterfaceNames) {
+    formDataImports.push(interfaceName);
+  }
+
+  // Create import statement with FormData interfaces
+  const allImports = [requestDtoName, mainModelName, ...formDataImports];
+  const importStatement = `import { ${allImports.join(", ")} } from './models/${mainModelName}';\n`;
+
   const content =
-    `import { ${requestDtoName}, ${mainModelName} } from './models/${mainModelName}';\n` +
+    `${importStatement}` +
     `\n` +
     `// Response wrapper type\n` +
     `type ${responseTypeName}<T> = {\n` +

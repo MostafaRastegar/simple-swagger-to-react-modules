@@ -29,12 +29,8 @@ async function formatCode(code, parser = "typescript") {
 function mapSwaggerTypeToTs(schema, definitions = {}) {
   if (schema.$ref) {
     const refName = schema.$ref.split("/").pop();
-    const definition = definitions[refName];
-    if (definition) {
-      // If a definition is found, recursively process its properties
-      return mapSwaggerTypeToTs(definition, definitions);
-    }
-    return refName; // Fallback if definition not found
+    // Fixed: Return the interface name directly for $ref instead of recursively processing
+    return refName;
   }
   if (schema.type === "array") {
     const itemsType = schema.items

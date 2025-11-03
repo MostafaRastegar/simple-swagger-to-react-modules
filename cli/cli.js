@@ -79,8 +79,7 @@ program
 
       // 1. Generate models
       console.log("Generating models...");
-      const definitions = swaggerJson.definitions || {};
-      await generateModelFiles(modelsDir, options.moduleName, definitions);
+      await generateModelFiles(modelsDir, options.moduleName, swaggerJson);
 
       // 2. Generate service interface
       console.log("Generating service interface...");

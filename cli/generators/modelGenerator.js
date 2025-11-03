@@ -1,14 +1,15 @@
 const fs = require("fs").promises;
 const path = require("path");
-const { formatCode, mapSwaggerTypeToTs } = require("../utils");
+const { formatCode, mapSwaggerTypeToTs, camelize } = require("../utils");
 
 /**
  * Generates model files for a given module.
  * @param {string} modelsDir - The directory to save model files.
  * @param {string} moduleName - The name of the module.
- * @param {object} definitions - Swagger definitions.
+ * @param {object} swaggerJson - The complete Swagger JSON object.
  */
-async function generateModelFiles(modelsDir, moduleName, definitions) {
+async function generateModelFiles(modelsDir, moduleName, swaggerJson) {
+  const definitions = swaggerJson.definitions || {};
   const mainModelName =
     moduleName.charAt(0).toUpperCase() + moduleName.slice(1);
   const mainModelDefinition = definitions[mainModelName];
@@ -72,6 +73,13 @@ async function generateModelFiles(modelsDir, moduleName, definitions) {
     }
   }
 
+  // Generate FormData interfaces for operations with formData parameters
+  allModelContent += await generateFormDataInterfaces(
+    moduleName,
+    mainModelName,
+    swaggerJson
+  );
+
   // Add DTOs for the main module
   const requestDtoName = `${mainModelName}CreateParams`;
   const responseDtoName = `${mainModelName}Response`;
@@ -84,6 +92,61 @@ async function generateModelFiles(modelsDir, moduleName, definitions) {
     path.join(modelsDir, `${mainModelName}.ts`), // Changed to capitalized
     finalContent
   );
+}
+
+/**
+ * Generates FormData interfaces for operations with formData parameters.
+ * @param {string} moduleName - The name of the module.
+ * @param {string} mainModelName - The capitalized model name.
+ * @param {object} swaggerJson - The complete Swagger JSON object.
+ * @returns {string} The FormData interface TypeScript code.
+ */
+async function generateFormDataInterfaces(
+  moduleName,
+  mainModelName,
+  swaggerJson
+) {
+  const definitions = swaggerJson.definitions || {};
+  const paths = swaggerJson.paths || {};
+  const basePath = swaggerJson.basePath || "";
+  let formDataInterfaces = "";
+
+  for (const [pathUrl, pathItem] of Object.entries(paths)) {
+    const effectivePath = pathUrl.startsWith("/")
+      ? pathUrl.substring(1)
+      : pathUrl;
+    const pathSegments = effectivePath.split("/");
+    const relevantSegmentIndex = basePath
+      ? pathSegments.findIndex((seg) => seg === moduleName.split("/")[0])
+      : pathSegments.findIndex((seg) => seg === moduleName);
+
+    if (relevantSegmentIndex !== -1) {
+      for (const [method, operation] of Object.entries(pathItem)) {
+        if (["post", "put"].includes(method)) {
+          const formDataParams =
+            operation.parameters?.filter((p) => p.in === "formData") || [];
+
+          if (formDataParams.length > 0) {
+            const operationId =
+              operation.operationId ||
+              `${method}_${pathUrl.replace(/\//g, "_").replace(/\{|\}/g, "")}`;
+            const interfaceName = `${mainModelName}${camelize(operationId.replace(new RegExp(moduleName, "i"), ""))}FormData`;
+
+            let interfaceProps = "";
+            for (const param of formDataParams) {
+              const paramType = mapSwaggerTypeToTs(param, definitions);
+              const isOptional = !param.required;
+              interfaceProps += `  ${param.name}${isOptional ? "?" : ""}: ${paramType};\n`;
+            }
+
+            formDataInterfaces += `export interface ${interfaceName} {\n${interfaceProps}}\n\n`;
+          }
+        }
+      }
+    }
+  }
+
+  return formDataInterfaces;
 }
 
 /**

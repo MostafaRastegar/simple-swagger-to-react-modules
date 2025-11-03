@@ -1,16 +1,10 @@
-export interface PetuploadFileFormData {
-  additionalMetadata?: string;
-  file?: any;
-}
-
-export interface PetupdateWithFormFormData {
-  name?: string;
-  status?: string;
-}
-
 import { PetService } from './pet.service';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
+import {
+  PetuploadFileFormData,
+  PetupdateWithFormFormData,
+} from './domains/models/Pet';
 import { PetCreateParams } from './domains/models/Pet';
 
 const petQueryKeys = {

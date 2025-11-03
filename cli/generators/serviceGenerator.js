@@ -83,19 +83,32 @@ async function generateServiceInterface(
             paramsTs = paramsTs.slice(0, -2);
           }
 
+          // Generate proper return type based on response schema
           let returnType = `Promise<${responseTypeName}<${mainModelName}>>`;
           const successResponse =
             operation.responses["200"]?.schema ||
             operation.responses.default?.schema;
 
           if (successResponse) {
-            const resolvedType = mapSwaggerTypeToTs(
-              successResponse,
-              definitions
-            );
-            if (successResponse.type === "array") {
-              returnType = `Promise<${responseTypeName}<Array<${resolvedType}>>>`;
-            } else {
+            // For array responses like findPetsByStatus, findPetsByTags
+            if (successResponse.type === "array" && successResponse.items) {
+              const itemType = mapSwaggerTypeToTs(
+                successResponse.items,
+                definitions
+              );
+              returnType = `Promise<${responseTypeName}<Array<${itemType}>>>`;
+            }
+            // For single object responses like getPetById
+            else if (successResponse.$ref) {
+              const refType = mapSwaggerTypeToTs(successResponse, definitions);
+              returnType = `Promise<${responseTypeName}<${refType}>>`;
+            }
+            // For other types
+            else {
+              const resolvedType = mapSwaggerTypeToTs(
+                successResponse,
+                definitions
+              );
               returnType = `Promise<${responseTypeName}<${resolvedType}>>`;
             }
           }
@@ -112,7 +125,13 @@ async function generateServiceInterface(
 
   const content =
     `import { ${requestDtoName}, ${mainModelName} } from './models/${mainModelName}';\n` +
-    `import { ${responseTypeName} } from 'papak/_modulesTypes';\n` +
+    `\n` +
+    `// Response wrapper type\n` +
+    `type ${responseTypeName}<T> = {\n` +
+    `  data: T;\n` +
+    `  status: number;\n` +
+    `  message?: string;\n` +
+    `};\n` +
     `\n` +
     `export interface ${interfaceName} {\n${methodsTs}}\n`;
   const finalContent = await formatCode(content);

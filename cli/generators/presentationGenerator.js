@@ -17,7 +17,6 @@ async function generatePresentationHooks(
   const modelName = moduleName.charAt(0).toUpperCase() + moduleName.slice(1);
   const moduleDirName = moduleName.toLowerCase();
   const mainModelName = modelName;
-  const formDataInterfaces = {};
   const definitions = swaggerJson.definitions || {};
   const usedTypes = new Set(); // Track types that need to be imported
 
@@ -25,42 +24,8 @@ async function generatePresentationHooks(
   const paths = swaggerJson.paths || {};
   const basePath = swaggerJson.basePath || "";
 
-  // Generate FormData interfaces
-  for (const [pathUrl, pathItem] of Object.entries(paths)) {
-    const effectivePath = pathUrl.startsWith("/")
-      ? pathUrl.substring(1)
-      : pathUrl;
-    const pathSegments = effectivePath.split("/");
-    const relevantSegmentIndex = basePath
-      ? pathSegments.findIndex((seg) => seg === moduleName.split("/")[0])
-      : pathSegments.findIndex((seg) => seg === moduleName);
-
-    if (relevantSegmentIndex !== -1) {
-      for (const [method, operation] of Object.entries(pathItem)) {
-        if (["post", "put"].includes(method)) {
-          const formDataParams =
-            operation.parameters?.filter((p) => p.in === "formData") || [];
-          if (formDataParams.length > 0) {
-            const operationId =
-              operation.operationId ||
-              `${method}_${pathUrl.replace(/\//g, "_").replace(/\{|\}/g, "")}`;
-            const interfaceName = `${modelName}${camelize(operationId.replace(new RegExp(moduleName, "i"), ""))}FormData`;
-
-            let interfaceProps = "";
-            for (const param of formDataParams) {
-              const paramType = mapSwaggerTypeToTs(param, definitions);
-              const isOptional = !param.required;
-              interfaceProps += `  ${param.name}${isOptional ? "?" : ""}: ${paramType};\n`;
-            }
-
-            // Use consistent interface naming
-            const consistentInterfaceName = interfaceName;
-            formDataInterfaces[consistentInterfaceName] = interfaceProps;
-          }
-        }
-      }
-    }
-  }
+  // Collect FormData interface names that will be imported from models
+  const formDataInterfaceNames = new Set();
 
   let queryKeysTs = `const ${moduleName}QueryKeys = {\n`;
   const processedOperationsForQueryKeys = new Set();
@@ -209,6 +174,7 @@ async function generatePresentationHooks(
                   operation.operationId ||
                   `${method}_${pathUrl.replace(/\//g, "_").replace(/\{|\}/g, "")}`;
                 formDataInterfaceNameForOperation = `${modelName}${camelize(operationId.replace(new RegExp(moduleName, "i"), ""))}FormData`;
+                formDataInterfaceNames.add(formDataInterfaceNameForOperation);
               }
               // Do not add to variableProps or serviceCallArgs here, will be done once after the loop
             }
@@ -374,10 +340,10 @@ async function generatePresentationHooks(
     hookMethodsTs = "    // No hooks generated\n";
   }
 
-  // Generate FormData interface imports
-  let formDataImports = "";
-  for (const [interfaceName, props] of Object.entries(formDataInterfaces)) {
-    formDataImports += `export interface ${interfaceName} {\n${props}}\n\n`;
+  // Generate FormData interface imports from models
+  const formDataImports = [];
+  for (const interfaceName of formDataInterfaceNames) {
+    formDataImports.push(interfaceName);
   }
 
   // Generate additional imports for used types
@@ -389,11 +355,17 @@ async function generatePresentationHooks(
     }
   }
 
+  // Generate FormData interface imports
+  const formDataImportLine =
+    formDataImports.length > 0
+      ? `import { ${formDataImports.join(", ")} } from './domains/models/${mainModelName}';\n`
+      : "";
+
   const content =
-    `${formDataImports}` +
     `import { ${serviceName} } from './${moduleDirName}.service';\n` +
     `import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';\n` +
     `import { useParams } from 'next/navigation';\n` +
+    `${formDataImportLine}` +
     `${additionalImports}\n` +
     `${queryKeysTs}` +
     `// PRESENTATION LAYER\n` +

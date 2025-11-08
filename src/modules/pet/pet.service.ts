@@ -1,6 +1,6 @@
 import { IPetService } from './domains/IPetService';
 import { Pet, PetCreateParams } from './domains/models/Pet';
-import { endpoints } from '../constants/endpoints';
+import { endpoints } from '@/constants/endpoints';
 import {
   serviceHandler,
   request,

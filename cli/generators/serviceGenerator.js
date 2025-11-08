@@ -315,7 +315,7 @@ async function generateServiceImplementation(
   const content =
     `import { ${interfaceName} } from './domains/${interfaceName}';\n` +
     `import { ${mainModelName}, ${requestDtoName} } from './domains/models/${mainModelName}';\n` +
-    `import { endpoints } from '../constants/endpoints';\n` +
+    `import { endpoints } from '@/constants/endpoints';\n` +
     `import { serviceHandler, request, requestWithoutAuth } from 'papak/helpers/serviceHandler';\n` +
     `\n` +
     `export function ${serviceName}(): ${interfaceName} {\n` +

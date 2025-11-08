@@ -57,11 +57,7 @@ program
       );
       const domainsDir = path.join(moduleOutputDir, "domains");
       const modelsDir = path.join(domainsDir, "models");
-      const constantsDir = path.join(
-        process.cwd(),
-        options.outputDir.split("/").slice(0, -1).join("/"),
-        "constants"
-      );
+      const constantsDir = path.join(process.cwd(), "src", "constants");
 
       await ensureDirectoryExists(modelsDir);
       await ensureDirectoryExists(domainsDir);

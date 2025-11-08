@@ -9,7 +9,8 @@
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "export": "node cli/cli.js generate -m $npm_config_tag -i swagger.json -o src/modules/"
+    "export": "node cli/cli.js generate -m $npm_config_tag -i swagger.json -o src/modules/",
+    "generate": "node scripts/select-module.js"
   },
   "keywords": [],
   "author": "",

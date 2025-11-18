@@ -56,6 +56,12 @@ program
       console.log(`Reading Swagger file from: ${options.input}`);
       const swaggerContent = await fs.readFile(options.input, "utf-8");
       const swaggerJson = JSON.parse(swaggerContent);
+      console.log(
+        "[DEBUG] CLI Loaded swaggerJson.components.schemas keys:",
+        swaggerJson.components?.schemas
+          ? Object.keys(swaggerJson.components.schemas)
+          : "undefined"
+      );
 
       const moduleOutputDir = path.join(
         process.cwd(),

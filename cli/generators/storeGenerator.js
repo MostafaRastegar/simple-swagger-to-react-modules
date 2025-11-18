@@ -3,7 +3,7 @@ const { formatCode } = require("../utils");
 
 // Function to generate store management files
 async function generateStoreFiles(moduleOutputDir, moduleName, swaggerJson) {
-  const modelName = getModelNameFromSwagger(swaggerJson);
+  const modelName = getModelNameFromSwagger(swaggerJson, moduleName);
   const moduleCamelCase =
     moduleName.charAt(0).toLowerCase() + moduleName.slice(1);
 
@@ -40,14 +40,26 @@ export const ${moduleCamelCase}Store = createStore<${modelName}Store>({
 }
 
 // Get model name from swagger definitions
-function getModelNameFromSwagger(swaggerJson) {
+function getModelNameFromSwagger(swaggerJson, moduleName) {
   const definitions = swaggerJson.definitions || {};
   const definitionKeys = Object.keys(definitions);
 
-  // Find main model for the module
+  // First try to find a model that matches the module name
+  const moduleModel = definitionKeys.find((key) => {
+    const keyLower = key.toLowerCase();
+    const moduleLower = moduleName.toLowerCase();
+    return keyLower.includes(moduleLower) || moduleLower.includes(keyLower);
+  });
+
+  if (moduleModel) {
+    return moduleModel;
+  }
+
+  // Fallback to existing logic
   const mainModel = definitionKeys.find((key) => {
     const keyLower = key.toLowerCase();
     return (
+      keyLower.includes("category") ||
       keyLower.includes("pet") ||
       keyLower.includes("user") ||
       keyLower.includes("order") ||

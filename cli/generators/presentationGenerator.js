@@ -30,6 +30,7 @@ async function generatePresentationHooks(
   let queryKeysTs = `const ${moduleName}QueryKeys = {\n`;
   const processedOperationsForQueryKeys = new Set();
 
+  // First pass: collect query keys for common operations
   for (const [pathUrl, pathItem] of Object.entries(paths)) {
     const effectivePath = pathUrl.startsWith("/")
       ? pathUrl.substring(1)
@@ -57,21 +58,8 @@ async function generatePresentationHooks(
             operationId.replace(new RegExp(moduleName, "i"), "")
           );
 
-          if (isMutation) {
-            if (
-              originalMethodName.includes("ById") ||
-              originalMethodName.includes("ByStatus") ||
-              originalMethodName.includes("ByTags")
-            ) {
-              const queryKeyName = originalMethodName
-                .replace(/([A-Z])/g, "_$1")
-                .toUpperCase();
-              if (!processedOperationsForQueryKeys.has(queryKeyName)) {
-                queryKeysTs += `  ${queryKeyName}: '${moduleName}_${originalMethodName}',\n`;
-                processedOperationsForQueryKeys.add(queryKeyName);
-              }
-            }
-          } else {
+          // Only include main operations, skip help operations
+          if (!operationId.toLowerCase().includes("help")) {
             const queryKeyName = originalMethodName
               .replace(/([A-Z])/g, "_$1")
               .toUpperCase();
@@ -86,6 +74,7 @@ async function generatePresentationHooks(
   }
   queryKeysTs += "};\n\n";
 
+  // Second pass: generate hooks
   for (const [pathUrl, pathItem] of Object.entries(paths)) {
     const effectivePath = pathUrl.startsWith("/")
       ? pathUrl.substring(1)
@@ -102,6 +91,11 @@ async function generatePresentationHooks(
             operation.operationId ||
             `${method}_${pathUrl.replace(/\//g, "_").replace(/\{|\}/g, "")}`;
 
+          // Skip help operations
+          if (operationId.toLowerCase().includes("help")) {
+            continue;
+          }
+
           const hookNameSuffix = operationId
             .replace(new RegExp(moduleName, "i"), "")
             .replace(/([a-z])([A-Z])/g, "$1_$2")
@@ -115,116 +109,122 @@ async function generatePresentationHooks(
 
           let hookFn = isMutation ? "useMutation" : "useQuery";
           let hookParams = "";
-          let serviceCallArgs = [];
           const allParams = operation.parameters || [];
-          let variablesType = "any";
-          let hasFormData = false;
           let usesUseParams = false; // Flag to check if useParams is used for an ID
           let idPathParam = null; // Store the ID path parameter if found
+          const pathParams = allParams.filter((p) => p.in === "path");
+          const queryParams = allParams.filter((p) => p.in === "query");
+          const bodyParam =
+            operation.requestBody?.content?.["application/json"]?.schema;
+          const formDataParams = allParams.filter((p) => p.in === "formData");
+          const formDataInterfaceNameForOperation =
+            formDataParams.length > 0
+              ? `${modelName}${camelize(operationId.replace(new RegExp(moduleName, "i"), ""))}FormData`
+              : null;
 
           // Check if this is a GET operation with a single path parameter that could be an ID
-          if (method === "get" && allParams) {
-            const pathParams = allParams.filter((p) => p.in === "path");
-            if (pathParams.length === 1) {
-              // Simplified: assume single path param is an ID for useParams
-              idPathParam = pathParams[0];
-              usesUseParams = true;
-            }
-          }
-
-          // Generate proper types for variables
-          let variableProps = "";
-          let formDataInterfaceNameForOperation = null;
-          for (const param of allParams) {
-            if (param.in === "path" || param.in === "query") {
-              // Skip adding this param to variables if it's the ID handled by useParams
-              if (
-                usesUseParams &&
-                idPathParam &&
-                param.name === idPathParam.name
-              ) {
-                serviceCallArgs.push(`id`); // Will be replaced by useParams value later
-                continue;
-              }
-              const paramType = mapSwaggerTypeToTs(param, definitions);
-              const isOptional = !param.required;
-              variableProps += `${param.name}${isOptional ? "?" : ""}: ${paramType}, `;
-              serviceCallArgs.push(`variables.${param.name}`);
-            } else if (param.in === "body") {
-              const bodySchema = param.schema || param;
-              const bodyType = mapSwaggerTypeToTs(bodySchema, definitions);
-              let bodyTypeName;
-
-              if (definitions[bodyType] && bodyType !== mainModelName) {
-                bodyTypeName = bodyType;
-                usedTypes.add(bodyTypeName);
-              } else if (bodyType === mainModelName) {
-                bodyTypeName = `${mainModelName}CreateParams`;
-                usedTypes.add(bodyTypeName);
-              } else {
-                bodyTypeName = `${mainModelName}CreateParams`;
-                usedTypes.add(bodyTypeName);
-              }
-
-              variableProps += `body: ${bodyTypeName}, `;
-              serviceCallArgs.push(`variables.body`);
-            } else if (param.in === "formData") {
-              if (!formDataInterfaceNameForOperation) {
-                const operationId =
-                  operation.operationId ||
-                  `${method}_${pathUrl.replace(/\//g, "_").replace(/\{|\}/g, "")}`;
-                formDataInterfaceNameForOperation = `${modelName}${camelize(operationId.replace(new RegExp(moduleName, "i"), ""))}FormData`;
-                formDataInterfaceNames.add(formDataInterfaceNameForOperation);
-              }
-              // Do not add to variableProps or serviceCallArgs here, will be done once after the loop
-            }
-          }
-
-          // Handle formData body after processing all params for the operation
-          if (formDataInterfaceNameForOperation) {
-            variableProps += `body: ${formDataInterfaceNameForOperation}, `;
-            serviceCallArgs.push(`variables.body`);
-          }
-
-          if (variableProps.endsWith(", ")) {
-            variableProps = variableProps.slice(0, -2);
-          }
-          // If useParams is used, variablesType might not include the ID
           if (
-            usesUseParams &&
-            idPathParam &&
-            variableProps.includes(idPathParam.name)
+            method === "get" &&
+            pathParams.length === 1 &&
+            !bodyParam &&
+            !formDataParams.length
           ) {
-            // This case should ideally not happen if the 'continue' in the loop works
-            // but as a fallback, remove id from variableProps if it was added
-            const idRegex = new RegExp(
-              `\\b${idPathParam.name}\\w*:\\s*[^,]+,\\s*`
-            );
-            variableProps = variableProps.replace(idRegex, "");
+            idPathParam = pathParams[0];
+            usesUseParams = true;
           }
-          variablesType = `{ ${variableProps} }`;
 
-          const serviceCall = `Service.${originalMethodName}(${serviceCallArgs.join(", ")})`;
+          let hookSignature = "()";
+          let variablesType = "Record<string, any>";
+          let serviceCallArgs = "";
+          let queryKeyArray = `[${moduleName}QueryKeys.${originalMethodName
+            .replace(/([A-Z])/g, "_$1")
+            .toUpperCase()}]`;
+
+          // Simplified logic based on serviceGenerator.js patterns
+          if (
+            pathParams.length === 1 &&
+            pathParams[0].name === "id" &&
+            !queryParams.length &&
+            !bodyParam &&
+            !formDataParams.length
+          ) {
+            // Case: only 'id' parameter (e.g., Retrieve, Destroy)
+            if (isMutation) {
+              hookSignature = "()";
+              serviceCallArgs = `({ id }) => Service.${originalMethodName}(id)`;
+            } else {
+              usesUseParams = true;
+              hookSignature = "()";
+              serviceCallArgs = "id";
+            }
+          } else if (bodyParam || formDataParams.length > 0) {
+            // Case: has body or formData
+            if (
+              pathParams.length === 1 &&
+              pathParams[0].name === "id" &&
+              !queryParams.length
+            ) {
+              // Case: 'id' and 'body' (e.g., Update)
+              hookSignature = "()";
+              serviceCallArgs = `({ id, body }) => Service.${originalMethodName}(id, body)`;
+            } else if (queryParams.length > 0 || pathParams.length > 0) {
+              // Case: path/query params and body
+              hookSignature = "(params: Record<string, any>)";
+              serviceCallArgs = "params, body";
+            } else {
+              // Case: only 'body' (e.g., Create)
+              hookSignature = "(body: any)";
+              serviceCallArgs = "body";
+            }
+          } else if (queryParams.length > 0 || pathParams.length > 0) {
+            // Case: only path/query params
+            if (
+              method === "get" &&
+              pathParams.length === 0 &&
+              queryParams.length > 0
+            ) {
+              // GET with only query params (e.g., List)
+              hookSignature = "(params: Record<string, any>)";
+              serviceCallArgs = "params";
+            } else {
+              // For other cases (POST with path/query, GET with path params, etc.)
+              if (pathParams.length > 0) {
+                hookSignature = "()";
+                usesUseParams = true;
+                serviceCallArgs = "params";
+              } else {
+                hookSignature = "(params: Record<string, any>)";
+                serviceCallArgs = "params";
+              }
+            }
+          } else {
+            // Default case: no parameters
+            hookSignature = "()";
+            serviceCallArgs = "()";
+          }
+
+          if (usesUseParams && idPathParam) {
+            queryKeyArray = `[${moduleName}QueryKeys.${originalMethodName
+              .replace(/([A-Z])/g, "_$1")
+              .toUpperCase()}, id]`;
+          } else if (queryParams.length > 0) {
+            queryKeyArray = `[${moduleName}QueryKeys.${originalMethodName
+              .replace(/([A-Z])/g, "_$1")
+              .toUpperCase()}, ...(params ? Object.values(params).filter((v) => v !== undefined) : [])]`;
+          }
 
           if (isMutation) {
-            const mutationFnString = `mutationFn: () => ${serviceCall}`;
+            let mutationFnString = `mutationFn: ${serviceCallArgs}`;
+            if (serviceCallArgs.includes("=>")) {
+              mutationFnString = `mutationFn: ${serviceCallArgs}`;
+            }
 
             // Determine query keys to invalidate
             // Default to common list query keys for the module
             let keysToInvalidate = [];
             // Check if common list keys were generated and add them
-            // This assumes keys like FINDS_BY_STATUS, FINDS_BY_TAGS etc. are in queryKeysTs
-            if (processedOperationsForQueryKeys.has("FINDS_BY_STATUS")) {
-              keysToInvalidate.push(`${moduleName}QueryKeys.FINDS_BY_STATUS`);
-            }
-            if (processedOperationsForQueryKeys.has("FINDS_BY_TAGS")) {
-              keysToInvalidate.push(`${moduleName}QueryKeys.FINDS_BY_TAGS`);
-            }
-            // Add more generic list keys if they exist and are relevant
-            // For example, if there was a generic 'list' or 'all' endpoint
-            if (processedOperationsForQueryKeys.has("GET_ALL")) {
-              // Example
-              keysToInvalidate.push(`${moduleName}QueryKeys.GET_ALL`);
+            if (processedOperationsForQueryKeys.has("LIST")) {
+              keysToInvalidate.push(`${moduleName}QueryKeys.LIST`);
             }
 
             // Construct onSuccess handler with invalidateQueries
@@ -240,93 +240,34 @@ async function generatePresentationHooks(
             hookParams = `{ ${mutationFnString}${onSuccessHandlerString ? `, ${onSuccessHandlerString.trim()}` : ""} }`;
 
             hookMethodsTs +=
-              `    ${hookName}: (variables: ${variablesType}) => {\n` +
-              `      return useMutation({ ${mutationFnString}${onSuccessHandlerString ? `, ${onSuccessHandlerString.trim()}` : ""} });\n` +
+              `    ${hookName}: ${hookSignature} => {\n` +
+              `      return useMutation(${hookParams});\n` +
               `    },\n`;
           } else {
-            let queryKeyArray = `[${moduleName}QueryKeys.`;
-            const queryKeySuffix = originalMethodName
-              .replace(/([A-Z])/g, "_$1")
-              .toUpperCase();
-            queryKeyArray += `${queryKeySuffix}`;
-
-            const pathQueryParams = allParams.filter(
-              (p) => p.in === "path" || p.in === "query"
-            );
-
-            // If useParams is used, the hook signature changes and id is not in variables
-            let hookSignatureParams = `(variables: ${variablesType})`;
             let hookBodyPreamble = "";
-            let currentServiceCall = serviceCall;
+            let currentServiceCallArgs = serviceCallArgs;
             let currentEnabledCondition = "enabled: true";
 
             if (usesUseParams && idPathParam) {
-              hookSignatureParams = "()"; // No variables needed for ID
               hookBodyPreamble = `  const { id } = useParams();\n`;
-              // Replace placeholder 'id' in serviceCallArgs with actual 'id' from useParams
-              currentServiceCall = `Service.${originalMethodName}(${serviceCallArgs.map((arg) => (arg === "id" ? "id" : arg)).join(", ")})`;
-
-              // Update queryKey to use the id from useParams
-              if (pathQueryParams.length > 0) {
-                // Filter out the idPathParam from pathQueryParams for queryKey
-                const otherPathQueryParams = pathQueryParams.filter(
-                  (p) => p.name !== idPathParam.name
-                );
-                if (otherPathQueryParams.length > 0) {
-                  queryKeyArray += `, ${otherPathQueryParams.map((p) => `JSON.stringify(variables.${p.name})`).join(", ")}`;
-                } else {
-                  queryKeyArray += `, id`; // Add id directly if it's the only path param (handled by useParams)
-                }
-              } else {
-                queryKeyArray += `, id`; // Add id directly if no other path/query params
+              if (serviceCallArgs === "params") {
+                currentServiceCallArgs = "id";
+              } else if (serviceCallArgs.includes("body")) {
+                currentServiceCallArgs = serviceCallArgs
+                  .replace("params, body", "id, body")
+                  .replace("body", "id");
               }
 
-              // Update enabled condition
-              if (allParams.some((p) => p.in === "body")) {
-                const requiredBodyParamNames = allParams
-                  .filter((p) => p.in === "body" && p.required)
-                  .map((p) => `variables.${p.name}`);
-                if (requiredBodyParamNames.length > 0) {
-                  currentEnabledCondition = `enabled: ${requiredBodyParamNames.join(" && ")}`;
-                } else if (allParams.some((p) => p.in === "body")) {
-                  currentEnabledCondition = `enabled: Object.keys(variables || {}).length > 0`;
-                }
-              } else {
-                currentEnabledCondition = `enabled: !!id`;
-              }
-            } else {
-              // Original logic for non-ID GETs
-              if (pathQueryParams.length > 0) {
-                queryKeyArray += `, ${pathQueryParams.map((p) => `JSON.stringify(variables.${p.name})`).join(", ")}`;
-              }
-              currentServiceCall = serviceCall; // Use original serviceCall
-              if (
-                pathQueryParams.length > 0 ||
-                allParams.some((p) => p.in === "body")
-              ) {
-                const requiredParamNames = allParams
-                  .filter((p) => p.required)
-                  .map((p) => `variables.${p.name}`);
-                if (requiredParamNames.length > 0) {
-                  currentEnabledCondition = `enabled: ${requiredParamNames.join(" && ")}`;
-                } else if (allParams.length > 0) {
-                  currentEnabledCondition = `enabled: Object.keys(variables || {}).length > 0`;
-                }
-              }
+              currentEnabledCondition = `enabled: !!id`;
+            } else if (queryParams.length > 0 && serviceCallArgs === "params") {
+              currentEnabledCondition = `enabled: Object.keys(params || {}).length > 0`;
             }
-            queryKeyArray += `]`;
 
-            const queryFnString = `queryFn: () => ${currentServiceCall}`;
+            const queryFnString = `queryFn: () => Service.${originalMethodName}(${currentServiceCallArgs})`;
             hookParams = `{ queryKey: ${queryKeyArray}, ${queryFnString}, ${currentEnabledCondition} }`;
 
-            let queryGenericType = mainModelName;
-            const successResponse = operation.responses["200"]?.schema;
-            if (successResponse && successResponse.type === "array") {
-              queryGenericType = `Array<${mainModelName}>`;
-            }
-
             hookMethodsTs +=
-              `    ${hookName}: ${hookSignatureParams} => {\n` +
+              `    ${hookName}: ${hookSignature} => {\n` +
               `${hookBodyPreamble}` +
               `      return useQuery(${hookParams});\n` +
               `    },\n`;
@@ -363,8 +304,12 @@ async function generatePresentationHooks(
 
   const content =
     `import { ${serviceName} } from './${moduleDirName}.service';\n` +
+    `import { ${mainModelName}CreateParams } from './domains/models/${mainModelName}';\n` +
     `import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';\n` +
     `import { useParams } from 'next/navigation';\n` +
+    `import { useSearchParamsToObject } from 'papak/utils/useSearchParamsToObject';\n` +
+    `import { formErrorHandler } from 'papak/utils/formErrorHandler';\n` +
+    `import { CustomError } from 'papak/utils/request/interceptors';\n` +
     `${formDataImportLine}` +
     `${additionalImports}\n` +
     `${queryKeysTs}` +

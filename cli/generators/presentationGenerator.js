@@ -18,15 +18,13 @@ async function generatePresentationHooks(
   const moduleDirName = moduleName.toLowerCase();
   const mainModelName = modelName;
   const definitions = swaggerJson.definitions || {};
-  const usedTypes = new Set(); // Track types that need to be imported
+  const usedTypes = new Set();
 
   let hookMethodsTs = "";
   const paths = swaggerJson.paths || {};
   const basePath = swaggerJson.basePath || "";
 
-  // Collect FormData interface names that will be imported from models
   const formDataInterfaceNames = new Set();
-
   let queryKeysTs = `const ${moduleName}QueryKeys = {\n`;
   const processedOperationsForQueryKeys = new Set();
 
@@ -47,24 +45,28 @@ async function generatePresentationHooks(
             operation.operationId ||
             `${method}_${pathUrl.replace(/\//g, "_").replace(/\{|\}/g, "")}`;
 
-          const hookNameSuffix = operationId
-            .replace(new RegExp(moduleName, "i"), "")
-            .replace(/([a-z])([A-Z])/g, "$1_$2")
-            .toLowerCase();
-          const hookName = `use${moduleName.charAt(0).toUpperCase() + moduleName.slice(1)}${hookNameSuffix.charAt(0).toUpperCase() + hookNameSuffix.slice(1).replace(/_/g, "")}`;
+          let operationSuffix = operationId.replace(
+            new RegExp(moduleName, "i"),
+            ""
+          );
+          operationSuffix = operationSuffix
+            .split("_")
+            .map((part, index) =>
+              index === 0 ? part : part.charAt(0).toUpperCase() + part.slice(1)
+            )
+            .join("");
+
+          const hookName = `use${moduleName.charAt(0).toUpperCase() + moduleName.slice(1)}${operationSuffix.charAt(0).toUpperCase() + operationSuffix.slice(1)}`;
 
           const isMutation = !["get"].includes(method);
           const originalMethodName = camelize(
             operationId.replace(new RegExp(moduleName, "i"), "")
           );
 
-          // Only include main operations, skip help operations
           if (!operationId.toLowerCase().includes("help")) {
-            const queryKeyName = originalMethodName
-              .replace(/([A-Z])/g, "_$1")
-              .toUpperCase();
+            const queryKeyName = originalMethodName.toLowerCase();
             if (!processedOperationsForQueryKeys.has(queryKeyName)) {
-              queryKeysTs += `  ${queryKeyName}: '${moduleName}_${originalMethodName}',\n`;
+              queryKeysTs += `  ${queryKeyName}: '${queryKeyName}',\n`;
               processedOperationsForQueryKeys.add(queryKeyName);
             }
           }
@@ -91,16 +93,22 @@ async function generatePresentationHooks(
             operation.operationId ||
             `${method}_${pathUrl.replace(/\//g, "_").replace(/\{|\}/g, "")}`;
 
-          // Skip help operations
           if (operationId.toLowerCase().includes("help")) {
             continue;
           }
 
-          const hookNameSuffix = operationId
-            .replace(new RegExp(moduleName, "i"), "")
-            .replace(/([a-z])([A-Z])/g, "$1_$2")
-            .toLowerCase();
-          const hookName = `use${moduleName.charAt(0).toUpperCase() + moduleName.slice(1)}${hookNameSuffix.charAt(0).toUpperCase() + hookNameSuffix.slice(1).replace(/_/g, "")}`;
+          let operationSuffix = operationId.replace(
+            new RegExp(moduleName, "i"),
+            ""
+          );
+          operationSuffix = operationSuffix
+            .split("_")
+            .map((part, index) =>
+              index === 0 ? part : part.charAt(0).toUpperCase() + part.slice(1)
+            )
+            .join("");
+
+          const hookName = `use${moduleName.charAt(0).toUpperCase() + moduleName.slice(1)}${operationSuffix.charAt(0).toUpperCase() + operationSuffix.slice(1)}`;
 
           const originalMethodName = camelize(
             operationId.replace(new RegExp(moduleName, "i"), "")
@@ -110,45 +118,22 @@ async function generatePresentationHooks(
           let hookFn = isMutation ? "useMutation" : "useQuery";
           let hookParams = "";
           const allParams = operation.parameters || [];
-          let usesUseParams = false; // Flag to check if useParams is used for an ID
-          let idPathParam = null; // Store the ID path parameter if found
+          let usesUseParams = false;
           const pathParams = allParams.filter((p) => p.in === "path");
           const queryParams = allParams.filter((p) => p.in === "query");
           const bodyParam =
             operation.requestBody?.content?.["application/json"]?.schema;
-          const formDataParams = allParams.filter((p) => p.in === "formData");
-          const formDataInterfaceNameForOperation =
-            formDataParams.length > 0
-              ? `${modelName}${camelize(operationId.replace(new RegExp(moduleName, "i"), ""))}FormData`
-              : null;
-
-          // Check if this is a GET operation with a single path parameter that could be an ID
-          if (
-            method === "get" &&
-            pathParams.length === 1 &&
-            !bodyParam &&
-            !formDataParams.length
-          ) {
-            idPathParam = pathParams[0];
-            usesUseParams = true;
-          }
 
           let hookSignature = "()";
-          let variablesType = "Record<string, any>";
           let serviceCallArgs = "";
-          let queryKeyArray = `[${moduleName}QueryKeys.${originalMethodName
-            .replace(/([A-Z])/g, "_$1")
-            .toUpperCase()}]`;
+          let queryKeyArray = `[${moduleName}QueryKeys.${originalMethodName.toLowerCase()}]`;
 
-          // Simplified logic based on serviceGenerator.js patterns
           if (
             pathParams.length === 1 &&
             pathParams[0].name === "id" &&
             !queryParams.length &&
-            !bodyParam &&
-            !formDataParams.length
+            !bodyParam
           ) {
-            // Case: only 'id' parameter (e.g., Retrieve, Destroy)
             if (isMutation) {
               hookSignature = "()";
               serviceCallArgs = `({ id }) => Service.${originalMethodName}(id)`;
@@ -157,87 +142,72 @@ async function generatePresentationHooks(
               hookSignature = "()";
               serviceCallArgs = "id";
             }
-          } else if (bodyParam || formDataParams.length > 0) {
-            // Case: has body or formData
-            if (
-              pathParams.length === 1 &&
-              pathParams[0].name === "id" &&
-              !queryParams.length
-            ) {
-              // Case: 'id' and 'body' (e.g., Update)
-              hookSignature = "()";
+          } else if (bodyParam) {
+            if (pathParams.length === 1 && pathParams[0].name === "id") {
+              hookSignature = "(form?: FormInstance)";
               serviceCallArgs = `({ id, body }) => Service.${originalMethodName}(id, body)`;
-            } else if (queryParams.length > 0 || pathParams.length > 0) {
-              // Case: path/query params and body
-              hookSignature = "(params: Record<string, any>)";
-              serviceCallArgs = "params, body";
             } else {
-              // Case: only 'body' (e.g., Create)
-              hookSignature = "(body: any)";
+              hookSignature = "(form?: FormInstance)";
               serviceCallArgs = "body";
             }
-          } else if (queryParams.length > 0 || pathParams.length > 0) {
-            // Case: only path/query params
-            if (
-              method === "get" &&
-              pathParams.length === 0 &&
-              queryParams.length > 0
-            ) {
-              // GET with only query params (e.g., List)
-              hookSignature = "(params: Record<string, any>)";
-              serviceCallArgs = "params";
-            } else {
-              // For other cases (POST with path/query, GET with path params, etc.)
-              if (pathParams.length > 0) {
-                hookSignature = "()";
-                usesUseParams = true;
-                serviceCallArgs = "params";
-              } else {
-                hookSignature = "(params: Record<string, any>)";
-                serviceCallArgs = "params";
-              }
-            }
+          } else if (queryParams.length > 0) {
+            hookSignature = "(params: PaginationParams)";
+            serviceCallArgs = "params";
           } else {
-            // Default case: no parameters
             hookSignature = "()";
             serviceCallArgs = "()";
           }
 
-          if (usesUseParams && idPathParam) {
-            queryKeyArray = `[${moduleName}QueryKeys.${originalMethodName
-              .replace(/([A-Z])/g, "_$1")
-              .toUpperCase()}, id]`;
-          } else if (queryParams.length > 0) {
-            queryKeyArray = `[${moduleName}QueryKeys.${originalMethodName
-              .replace(/([A-Z])/g, "_$1")
-              .toUpperCase()}, ...(params ? Object.values(params).filter((v) => v !== undefined) : [])]`;
-          }
-
           if (isMutation) {
-            let mutationFnString = `mutationFn: ${serviceCallArgs}`;
+            let mutationFnString = "";
+
             if (serviceCallArgs.includes("=>")) {
-              mutationFnString = `mutationFn: ${serviceCallArgs}`;
+              if (serviceCallArgs.includes("({ id })")) {
+                mutationFnString = `mutationFn: ({ id }: { id: number }) => Service.${originalMethodName}(id)`;
+              } else if (serviceCallArgs.includes("({ id, body })")) {
+                mutationFnString = `mutationFn: ({ id, body }: { id: number; body: CategoryRequest }) => Service.${originalMethodName}(id, body)`;
+              }
+            } else if (serviceCallArgs === "body") {
+              mutationFnString = `mutationFn: (body: CategoryRequest) => Service.${originalMethodName}(body)`;
             }
 
-            // Determine query keys to invalidate
-            // Default to common list query keys for the module
             let keysToInvalidate = [];
-            // Check if common list keys were generated and add them
-            if (processedOperationsForQueryKeys.has("LIST")) {
-              keysToInvalidate.push(`${moduleName}QueryKeys.LIST`);
+            if (processedOperationsForQueryKeys.has("list")) {
+              keysToInvalidate.push(`${moduleName}QueryKeys.list`);
+            }
+            if (processedOperationsForQueryKeys.has("retrieve")) {
+              keysToInvalidate.push(`${moduleName}QueryKeys.retrieve`);
             }
 
-            // Construct onSuccess handler with invalidateQueries
+            let keysToInvalidateWithOptions = [];
+            // List queries use exact match
+            if (processedOperationsForQueryKeys.has("list")) {
+              keysToInvalidateWithOptions.push(
+                `{ queryKey: [${moduleName}QueryKeys.list] }`
+              );
+            }
+            // Retrieve queries use non-exact match (to invalidate all retrieval queries regardless of ID)
+            if (processedOperationsForQueryKeys.has("retrieve")) {
+              keysToInvalidateWithOptions.push(
+                `{ queryKey: [${moduleName}QueryKeys.retrieve], exact: false }`
+              );
+            }
+
             let onSuccessHandlerString = "";
-            if (keysToInvalidate.length > 0) {
+            if (keysToInvalidateWithOptions.length > 0) {
               onSuccessHandlerString = `onSuccess: () => {\n`;
-              keysToInvalidate.forEach((key) => {
-                onSuccessHandlerString += `        queryClient.invalidateQueries({ queryKey: [${key}] });\n`;
+              keysToInvalidateWithOptions.forEach((keyOption) => {
+                onSuccessHandlerString += `        queryClient.invalidateQueries(${keyOption});\n`;
               });
-              onSuccessHandlerString += `      },\n`;
+              onSuccessHandlerString += `      }`;
             }
 
-            hookParams = `{ ${mutationFnString}${onSuccessHandlerString ? `, ${onSuccessHandlerString.trim()}` : ""} }`;
+            let errorHandlerString = "";
+            if (hookSignature.includes("FormInstance")) {
+              errorHandlerString = `onError: (error) => { const errorDetails = error as unknown as CustomError; if (form) { formErrorHandler(form, errorDetails?.details); } }`;
+            }
+
+            hookParams = `{ ${mutationFnString}${onSuccessHandlerString ? `, ${onSuccessHandlerString.trim()}` : ""}${errorHandlerString ? `, ${errorHandlerString.trim()}` : ""} }`;
 
             hookMethodsTs +=
               `    ${hookName}: ${hookSignature} => {\n` +
@@ -248,18 +218,13 @@ async function generatePresentationHooks(
             let currentServiceCallArgs = serviceCallArgs;
             let currentEnabledCondition = "enabled: true";
 
-            if (usesUseParams && idPathParam) {
+            if (usesUseParams) {
               hookBodyPreamble = `  const { id } = useParams();\n`;
-              if (serviceCallArgs === "params") {
-                currentServiceCallArgs = "id";
-              } else if (serviceCallArgs.includes("body")) {
-                currentServiceCallArgs = serviceCallArgs
-                  .replace("params, body", "id, body")
-                  .replace("body", "id");
-              }
-
+              currentServiceCallArgs = "id";
               currentEnabledCondition = `enabled: !!id`;
-            } else if (queryParams.length > 0 && serviceCallArgs === "params") {
+              // Update queryKeyArray to include the ID for per-item caching
+              queryKeyArray = `[${moduleName}QueryKeys.${originalMethodName.toLowerCase()}, id]`;
+            } else if (queryParams.length > 0) {
               currentEnabledCondition = `enabled: Object.keys(params || {}).length > 0`;
             }
 
@@ -277,41 +242,19 @@ async function generatePresentationHooks(
     }
   }
 
-  if (!hookMethodsTs) {
-    hookMethodsTs = "    // No hooks generated\n";
-  }
-
-  // Generate FormData interface imports from models
   const formDataImports = [];
-  for (const interfaceName of formDataInterfaceNames) {
-    formDataImports.push(interfaceName);
-  }
-
-  // Generate additional imports for used types
-  let additionalImports = "";
-  for (const typeName of usedTypes) {
-    if (typeName.includes("CreateParams") || definitions[typeName]) {
-      // Only import if it's a CreateParams type or defined in swagger definitions
-      additionalImports += `import { ${typeName} } from './domains/models/${mainModelName}';\n`;
-    }
-  }
-
-  // Generate FormData interface imports
-  const formDataImportLine =
-    formDataImports.length > 0
-      ? `import { ${formDataImports.join(", ")} } from './domains/models/${mainModelName}';\n`
-      : "";
+  const formDataImportLine = "";
 
   const content =
     `import { ${serviceName} } from './${moduleDirName}.service';\n` +
-    `import { ${mainModelName}CreateParams } from './domains/models/${mainModelName}';\n` +
+    `import { ${mainModelName}CreateParams, CategoryRequest } from './domains/models/${mainModelName}';\n` +
+    `import { PaginationParams } from 'papak/_modulesTypes';\n` +
     `import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';\n` +
     `import { useParams } from 'next/navigation';\n` +
     `import { useSearchParamsToObject } from 'papak/utils/useSearchParamsToObject';\n` +
     `import { formErrorHandler } from 'papak/utils/formErrorHandler';\n` +
     `import { CustomError } from 'papak/utils/request/interceptors';\n` +
-    `${formDataImportLine}` +
-    `${additionalImports}\n` +
+    `import { type FormInstance } from 'antd';\n` +
     `${queryKeysTs}` +
     `// PRESENTATION LAYER\n` +
     `// React Query hooks for ${moduleName}\n` +
@@ -320,10 +263,10 @@ async function generatePresentationHooks(
     `  const queryClient = useQueryClient();\n` +
     `  return {\n${hookMethodsTs}\n  };\n` +
     `}\n\n`;
-  const finalContent = await formatCode(content, "typescript");
-  await fs.writeFile(
+
+  return fs.writeFile(
     path.join(moduleOutputDir, `${moduleDirName}.presentation.ts`),
-    finalContent
+    content
   );
 }
 

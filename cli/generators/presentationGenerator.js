@@ -18,7 +18,6 @@ async function generatePresentationHooks(
   const moduleDirName = moduleName.toLowerCase();
   const mainModelName = modelName;
   const definitions = swaggerJson.definitions || {};
-  const usedTypes = new Set();
 
   let hookMethodsTs = "";
   const paths = swaggerJson.paths || {};
@@ -169,6 +168,9 @@ async function generatePresentationHooks(
               }
             } else if (serviceCallArgs === "body") {
               mutationFnString = `mutationFn: (body: CategoryRequest) => Service.${originalMethodName}(body)`;
+            } else if (serviceCallArgs === "()") {
+              // Handle operations with no parameters
+              mutationFnString = `mutationFn: () => Service.${originalMethodName}()`;
             }
 
             let keysToInvalidate = [];
@@ -245,9 +247,25 @@ async function generatePresentationHooks(
   const formDataImports = [];
   const formDataImportLine = "";
 
+  // Determine the correct request interface name
+  const requestInterfaceName = `${modelName}Request`;
+  const usedTypes = new Set();
+
+  // Extract used types from hookMethodsTs to build proper imports
+  const importMatches = hookMethodsTs.match(
+    /CategoriesCreateParams|[A-Z][a-zA-Z]*Request/g
+  );
+  if (importMatches) {
+    importMatches.forEach((match) => usedTypes.add(match));
+  }
+
+  // Always include the main model and create params
+  usedTypes.add(requestInterfaceName);
+  usedTypes.add(`${mainModelName}CreateParams`);
+
   const content =
     `import { ${serviceName} } from './${moduleDirName}.service';\n` +
-    `import { ${mainModelName}CreateParams, CategoryRequest } from './domains/models/${mainModelName}';\n` +
+    `import { ${Array.from(usedTypes).join(", ")} } from './domains/models/${mainModelName}';\n` +
     `import { PaginationParams } from 'papak/_modulesTypes';\n` +
     `import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';\n` +
     `import { useParams } from 'next/navigation';\n` +

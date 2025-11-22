@@ -1,0 +1,310 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "TSP",
+    "version": "0.1.0",
+    "description": "TSP Rest APIs"
+  },
+
+  "paths": {
+    "/api/v1/categories/": {
+      "get": {
+        "operationId": "categories_list",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "category_title",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "id",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "ordering",
+            "required": false,
+            "in": "query",
+            "description": "Which field to use when ordering the results.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "A page number within the paginated result set.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "page_size",
+            "required": false,
+            "in": "query",
+            "description": "Number of results to return per page.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "A search term.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "tags": ["categories"],
+        "security": [
+          {
+            "jwtAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedCategoryList"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      },
+      "post": {
+        "operationId": "categories_create",
+        "tags": ["categories"],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CategoryRequest"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/CategoryRequest"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/CategoryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "jwtAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Category"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/v1/categories/{id}/": {
+      "get": {
+        "operationId": "categories_retrieve",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "integer"
+            },
+            "description": "A unique integer value identifying this صنف.",
+            "required": true
+          }
+        ],
+        "tags": ["categories"],
+        "security": [
+          {
+            "jwtAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Category"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      },
+      "put": {
+        "operationId": "categories_update",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "integer"
+            },
+            "description": "A unique integer value identifying this صنف.",
+            "required": true
+          }
+        ],
+        "tags": ["categories"],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CategoryRequest"
+              }
+            },
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/CategoryRequest"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/CategoryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "jwtAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Category"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      },
+      "delete": {
+        "operationId": "categories_destroy",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "integer"
+            },
+            "description": "A unique integer value identifying this صنف.",
+            "required": true
+          }
+        ],
+        "tags": ["categories"],
+        "security": [
+          {
+            "jwtAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No response body"
+          }
+        }
+      }
+    }
+  },
+
+  "components": {
+    "schemas": {
+      "Category": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "readOnly": true
+          },
+          "category_title": {
+            "type": "string",
+            "title": "نام صنف",
+            "maxLength": 255
+          }
+        },
+        "required": ["category_title", "id"]
+      },
+      "CategoryEnum": {
+        "enum": [
+          "general",
+          "technical",
+          "contract",
+          "invoice",
+          "memory",
+          "contact",
+          "support"
+        ],
+        "type": "string",
+        "description": "* `general` - عمومی\n* `technical` - فنی\n* `contract` - قرارداد\n* `invoice` - صورتحساب\n* `memory` - شناسه حافظه\n* `contact` - خریدار\n* `support` - پشتیبانی"
+      },
+      "CategoryRequest": {
+        "type": "object",
+        "properties": {
+          "category_title": {
+            "type": "string",
+            "minLength": 1,
+            "title": "نام صنف",
+            "maxLength": 255
+          }
+        },
+        "required": ["category_title"]
+      },
+      "PaginatedCategoryList": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer",
+            "description": "Total number of items."
+          },
+          "next": {
+            "type": "string",
+            "nullable": true,
+            "description": "URL for the next page of results."
+          },
+          "previous": {
+            "type": "string",
+            "nullable": true,
+            "description": "URL for the previous page of results."
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Category"
+            },
+            "description": "Array of items on the current page."
+          }
+        },
+        "required": ["count", "results", "next", "previous"]
+      }
+    }
+  }
+}

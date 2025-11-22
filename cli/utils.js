@@ -24,17 +24,26 @@ async function formatCode(code, parser = "typescript") {
  * Maps Swagger schema types to TypeScript types.
  * @param {object} schema - The Swagger schema object.
  * @param {object} definitions - Swagger definitions.
+ * @param {Map} sanitizedNameMap - Mapping of original names to sanitized names.
  * @returns {string} The TypeScript type.
  */
-function mapSwaggerTypeToTs(schema, definitions = {}) {
+function mapSwaggerTypeToTs(
+  schema,
+  definitions = {},
+  sanitizedNameMap = new Map()
+) {
   if (schema.$ref) {
     const refName = schema.$ref.split("/").pop();
+    // Check if we have a sanitized version of this name
+    if (sanitizedNameMap && sanitizedNameMap.has(refName)) {
+      return sanitizedNameMap.get(refName);
+    }
     // Fixed: Return the interface name directly for $ref instead of recursively processing
     return refName;
   }
   if (schema.type === "array") {
     const itemsType = schema.items
-      ? mapSwaggerTypeToTs(schema.items, definitions)
+      ? mapSwaggerTypeToTs(schema.items, definitions, sanitizedNameMap)
       : "any";
     return `Array<${itemsType}>`;
   }

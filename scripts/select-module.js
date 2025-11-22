@@ -4,6 +4,32 @@ const fs = require("fs").promises;
 const path = require("path");
 const { execSync } = require("child_process");
 
+/**
+ * Extract unique module names from operation tags in swagger.json
+ * @param {object} swaggerJson - The parsed swagger.json content
+ * @returns {string[]} - Array of unique module names
+ */
+function extractModulesFromTags(swaggerJson) {
+  const moduleSet = new Set();
+
+  if (swaggerJson.paths) {
+    Object.values(swaggerJson.paths).forEach((pathObj) => {
+      Object.values(pathObj).forEach((operation) => {
+        if (operation.tags && Array.isArray(operation.tags)) {
+          operation.tags.forEach((tag) => {
+            // Filter out common non-module tags
+            if (!["pet", "store", "user"].includes(tag.toLowerCase())) {
+              moduleSet.add(tag);
+            }
+          });
+        }
+      });
+    });
+  }
+
+  return Array.from(moduleSet).sort();
+}
+
 async function getAvailableModules() {
   try {
     // Read swagger.json
@@ -11,10 +37,13 @@ async function getAvailableModules() {
     const swaggerContent = await fs.readFile(swaggerPath, "utf-8");
     const swagger = JSON.parse(swaggerContent);
 
-    // Extract modules from tags
-    const modules = swagger.tags.map((tag) => ({
-      name: tag.name,
-      description: tag.description,
+    // Extract modules from operation tags (not root tags)
+    const moduleNames = extractModulesFromTags(swagger);
+
+    // Convert to format expected by the display function
+    const modules = moduleNames.map((name) => ({
+      name: name,
+      description: `Operations tagged with '${name}'`,
     }));
 
     return modules;

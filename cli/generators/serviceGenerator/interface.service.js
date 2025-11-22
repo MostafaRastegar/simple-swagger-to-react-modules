@@ -247,22 +247,30 @@ async function generateServiceInterface(
               }
             }
 
-            if (paramsTs.startsWith("params: ")) {
-              methodsTs += `  ${methodName}(${paramsTs}): ${returnType};\n`;
-            } else if (paramsTs.includes(":")) {
-              // Check if it's a combined object like "id: any, body: CategoryRequest"
-              if (paramsTs.includes(", ") && paramsTs.includes("body:")) {
-                // Split into individual parameters
-                const paramsArray = paramsTs.split(", ");
-                methodsTs += `  ${methodName}(${paramsArray.join(", ")}): ${returnType};\n`;
-              } else if (paramsTs === "id: any") {
-                // Handle the case where paramsTs is just "id: any"
-                methodsTs += `  ${methodName}(${paramsTs}): ${returnType};\n`;
+            // Handle different parameter patterns
+            if (!paramsTs || paramsTs.trim() === "") {
+              // No parameters
+              methodsTs += `  ${methodName}(): ${returnType};\n`;
+            } else if (paramsTs.startsWith("params: ")) {
+              const cleanParams = paramsTs.replace("params: ", "");
+              if (cleanParams.trim() === "") {
+                methodsTs += `  ${methodName}(): ${returnType};\n`;
               } else {
-                methodsTs += `  ${methodName}(params: { ${paramsTs} }): ${returnType};\n`;
+                methodsTs += `  ${methodName}(${paramsTs}): ${returnType};\n`;
               }
+            } else if (paramsTs.includes(", ") && paramsTs.includes("body:")) {
+              // Combined parameters like "id: any, body: CategoryRequest"
+              const paramsArray = paramsTs.split(", ");
+              methodsTs += `  ${methodName}(${paramsArray.join(", ")}): ${returnType};\n`;
+            } else if (
+              paramsTs === "id: any" ||
+              /^[\w$]+: .+$/.test(paramsTs)
+            ) {
+              // Single typed parameter like "id: any" or "body: CategoryRequest"
+              methodsTs += `  ${methodName}(${paramsTs}): ${returnType};\n`;
             } else {
-              methodsTs += `  ${methodName}(params: ${paramsTs}): ${returnType};\n`;
+              // Default case for complex parameter objects
+              methodsTs += `  ${methodName}(params: { ${paramsTs} }): ${returnType};\n`;
             }
           }
         }

@@ -4,6 +4,36 @@ const { formatCode, camelize } = require("../../utils");
 const { generateSingleModelInterface } = require("./interface.model");
 
 /**
+ * Sanitizes schema names to create valid TypeScript interface names
+ * @param {string} name - The raw schema name from swagger
+ * @returns {string} - A valid PascalCase interface name
+ */
+function sanitizeInterfaceName(name) {
+  if (!name) return "Interface";
+
+  // Replace spaces with underscores, remove special chars, and make PascalCase
+  let cleaned = name
+    .replace(/\s+/g, "_") // spaces to underscores
+    .replace(/[^a-zA-Z0-9_]/g, "_") // special chars to underscores
+    .replace(/^_+|_+$/g, "") // remove leading/trailing underscores
+    .split("_") // split by underscore
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()) // PascalCase each word
+    .join("");
+
+  // Ensure it starts with a letter (TypeScript interface names can't start with numbers)
+  if (/^[0-9]/.test(cleaned)) {
+    cleaned = "Interface" + cleaned;
+  }
+
+  // Remove empty strings and ensure minimum length
+  if (cleaned.length < 1) {
+    cleaned = "Interface";
+  }
+
+  return cleaned;
+}
+
+/**
  * Generates model files for a given module.
  * @param {string} modelsDir - The directory to save model files.
  * @param {string} moduleName - The name of the module.
@@ -35,28 +65,54 @@ async function generateModelFiles(modelsDir, moduleName, swaggerJson) {
   let allModelContent = "";
   const processedSchemaNames = new Set(); // To keep track of already processed schemas
 
+  // Store mapping of original names to sanitized names
+  const sanitizedNameMap = new Map();
+
   // Helper to generate a schema interface and add its content
   const addSchemaInterface = async (schemaName, definition) => {
-    if (!processedSchemaNames.has(schemaName) && definition) {
+    if (!schemaName || !definition) return;
+
+    // Sanitize the schema name to ensure it's a valid TypeScript interface name
+    const sanitizedSchemaName = sanitizeInterfaceName(schemaName);
+
+    // Use normalized name for processing tracking to avoid duplicates
+    const normalizedName = sanitizedSchemaName.toLowerCase();
+    if (processedSchemaNames.has(normalizedName)) {
       console.log(
-        `[DEBUG] addSchemaInterface called for: ${schemaName}`,
-        definition
+        `[DEBUG] addSchemaInterface SKIPPED for ${schemaName} -> ${sanitizedSchemaName}. Already processed.`
       );
+      return;
+    }
+
+    // Store the mapping for reference resolution
+    sanitizedNameMap.set(schemaName, sanitizedSchemaName);
+
+    console.log(
+      `[DEBUG] addSchemaInterface called for: ${schemaName} -> ${sanitizedSchemaName}`,
+      definition
+    );
+
+    try {
       const generatedInterface = await generateSingleModelInterface(
-        schemaName,
+        sanitizedSchemaName,
         definition,
-        definitions
+        definitions,
+        sanitizedNameMap
       );
       console.log(
-        `[DEBUG] Generated interface for ${schemaName}:\n${generatedInterface}`
+        `[DEBUG] Generated interface for ${sanitizedSchemaName}:\n${generatedInterface}`
       );
       allModelContent += generatedInterface;
-      processedSchemaNames.add(schemaName);
-      console.log(`[DEBUG] ${schemaName} added to processedSchemaNames.`);
-    } else {
+      processedSchemaNames.add(normalizedName);
       console.log(
-        `[DEBUG] addSchemaInterface SKIPPED for ${schemaName}. Processed: ${processedSchemaNames.has(schemaName)}, Definition: ${!!definition}`
+        `[DEBUG] ${sanitizedSchemaName} added to processedSchemaNames.`
       );
+    } catch (error) {
+      console.warn(
+        `[WARN] Failed to generate interface for ${sanitizedSchemaName}:`,
+        error.message
+      );
+      // Continue processing other schemas instead of stopping
     }
   };
 

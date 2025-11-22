@@ -6,6 +6,32 @@ const path = require("path");
 
 const { ensureDirectoryExists } = require("./utils");
 
+/**
+ * Extract unique module names from operation tags in swagger.json
+ * @param {object} swaggerJson - The parsed swagger.json content
+ * @returns {string[]} - Array of unique module names
+ */
+function extractModulesFromTags(swaggerJson) {
+  const moduleSet = new Set();
+
+  if (swaggerJson.paths) {
+    Object.values(swaggerJson.paths).forEach((pathObj) => {
+      Object.values(pathObj).forEach((operation) => {
+        if (operation.tags && Array.isArray(operation.tags)) {
+          operation.tags.forEach((tag) => {
+            // Filter out common non-module tags
+            if (!["pet", "store", "user"].includes(tag.toLowerCase())) {
+              moduleSet.add(tag);
+            }
+          });
+        }
+      });
+    });
+  }
+
+  return Array.from(moduleSet).sort();
+}
+
 const { generateModelFiles } = require("./generators/modelGenerator");
 
 const {
@@ -36,15 +62,15 @@ program
 program
   .command("generate")
   .alias("g")
-  .description("Generate DDD module from swagger.json")
+  .description("Generate DDD module(s) from swagger.json")
   .requiredOption("-i, --input <file>", "Input Swagger JSON file path")
-  .requiredOption(
+  .option(
     "-m, --module-name <name>",
-    "Name of the module (e.g., pet, user)"
+    "Name of specific module to generate (if not provided, all modules will be detected and generated)"
   )
   .requiredOption(
     "-o, --output-dir <dir>",
-    "Output directory for the module (e.g., src/modules)"
+    "Output directory for the module(s) (e.g., src/modules)"
   )
   .option(
     "--base-url <url>",
@@ -56,24 +82,26 @@ program
       console.log(`Reading Swagger file from: ${options.input}`);
       const swaggerContent = await fs.readFile(options.input, "utf-8");
       const swaggerJson = JSON.parse(swaggerContent);
+
+      // If no specific module is provided, auto-detect all modules
+      const modulesToGenerate = options.moduleName
+        ? [options.moduleName]
+        : extractModulesFromTags(swaggerJson);
+
+      if (modulesToGenerate.length === 0) {
+        console.log("No modules found to generate!");
+        console.log(
+          "Either provide a specific module name with -m, or make sure operations have proper 'tags' arrays."
+        );
+        process.exit(1);
+      }
+
       console.log(
-        "[DEBUG] CLI Loaded swaggerJson.components.schemas keys:",
-        swaggerJson.components?.schemas
-          ? Object.keys(swaggerJson.components.schemas)
-          : "undefined"
+        `Will generate ${modulesToGenerate.length} module(s):`,
+        modulesToGenerate.join(", ")
       );
 
-      const moduleOutputDir = path.join(
-        process.cwd(),
-        options.outputDir,
-        options.moduleName
-      );
-      const domainsDir = path.join(moduleOutputDir, "domains");
-      const modelsDir = path.join(domainsDir, "models");
       const constantsDir = path.join(process.cwd(), "src", "constants");
-
-      await ensureDirectoryExists(modelsDir);
-      await ensureDirectoryExists(domainsDir);
       try {
         await ensureDirectoryExists(constantsDir);
       } catch (mkdirErr) {
@@ -82,85 +110,72 @@ program
         }
       }
 
-      console.log(
-        `Generating module '${options.moduleName}' in: ${moduleOutputDir}`
-      );
+      // Generate each module
+      for (const moduleName of modulesToGenerate) {
+        console.log(`\n=== Generating module: ${moduleName} ===`);
 
-      // 1. Generate models
-      console.log("Generating models...");
-      await generateModelFiles(modelsDir, options.moduleName, swaggerJson);
+        const moduleOutputDir = path.join(
+          process.cwd(),
+          options.outputDir,
+          moduleName
+        );
+        const domainsDir = path.join(moduleOutputDir, "domains");
+        const modelsDir = path.join(domainsDir, "models");
 
-      // 2. Generate service interface
-      console.log("Generating service interface...");
-      await generateServiceInterface(
-        domainsDir,
-        options.moduleName,
-        swaggerJson,
-        options.baseUrl
-      );
+        await ensureDirectoryExists(modelsDir);
+        await ensureDirectoryExists(domainsDir);
 
-      // 3. Generate service implementation
-      console.log("Generating service implementation...");
-      await generateServiceImplementation(
-        moduleOutputDir,
-        options.moduleName,
-        swaggerJson,
-        options.baseUrl
-      );
+        console.log("Generating models...");
+        await generateModelFiles(modelsDir, moduleName, swaggerJson);
 
-      // 4. Generate presentation hooks
-      console.log("Generating presentation hooks...");
-      await generatePresentationHooks(
-        moduleOutputDir,
-        options.moduleName,
-        swaggerJson
-      );
+        console.log("Generating service interface...");
+        await generateServiceInterface(
+          domainsDir,
+          moduleName,
+          swaggerJson,
+          options.baseUrl
+        );
 
-      // 5. Generate store management
-      console.log("Generating store files...");
-      await generateStoreFiles(
-        moduleOutputDir,
-        options.moduleName,
-        swaggerJson
-      );
+        console.log("Generating service implementation...");
+        await generateServiceImplementation(
+          moduleOutputDir,
+          moduleName,
+          swaggerJson,
+          options.baseUrl
+        );
 
-      // 6. Generate app routes and UI components
-      console.log("Generating app routes and UI components...");
-      await generateAppRouteFile(
-        moduleOutputDir,
-        options.moduleName,
-        swaggerJson
-      );
+        console.log("Generating presentation hooks...");
+        await generatePresentationHooks(
+          moduleOutputDir,
+          moduleName,
+          swaggerJson
+        );
 
-      await generateModalComponents(
-        moduleOutputDir,
-        options.moduleName,
-        swaggerJson
-      );
+        console.log("Generating store files...");
+        await generateStoreFiles(moduleOutputDir, moduleName, swaggerJson);
 
-      // 7. Update or create endpoints.ts
-      console.log("Updating/Creating endpoints.ts...");
-      await updateEndpointsFile(
-        constantsDir,
-        options.moduleName,
-        swaggerJson,
-        options.baseUrl
-      );
+        console.log("Generating app routes and UI components...");
+        await generateAppRouteFile(moduleOutputDir, moduleName, swaggerJson);
+
+        await generateModalComponents(moduleOutputDir, moduleName, swaggerJson);
+
+        console.log("Updating/Creating endpoints.ts...");
+        await updateEndpointsFile(
+          constantsDir,
+          moduleName,
+          swaggerJson,
+          options.baseUrl
+        );
+
+        console.log(`✅ Successfully generated module: ${moduleName}`);
+      }
 
       console.log(
-        `Successfully generated complete DDD module with UI for '${options.moduleName}'!`
+        `\n🎉 All ${modulesToGenerate.length} module(s) generated successfully!`
       );
-      console.log("Generated files:");
-      console.log(`  - Domain models: ${modelsDir}`);
-      console.log(`  - Service layer: ${moduleOutputDir}`);
-      console.log(
-        `  - App routes: ${moduleOutputDir.replace("/modules/", "/app/").replace(`/modules/${options.moduleName}`, `/${options.moduleName}`)}`
-      );
-      console.log(
-        `  - UI components: ${moduleOutputDir.replace("/modules/", "/app/").replace(`/modules/${options.moduleName}`, `/${options.moduleName}/_components`)}`
-      );
+      console.log("Run 'npm run list-modules' to see available modules.");
     } catch (error) {
-      console.error("Error generating module:", error);
+      console.error("Error generating module(s):", error);
       process.exit(1);
     }
   });
@@ -224,6 +239,47 @@ program
       );
     } catch (error) {
       console.error("Error generating UI components:", error);
+      process.exit(1);
+    }
+  });
+
+// New command to list available modules from swagger tags
+program
+  .command("list-modules")
+  .alias("lm")
+  .description(
+    "List all available modules found in swagger.json operation tags"
+  )
+  .option(
+    "-i, --input <file>",
+    "Input Swagger JSON file path",
+    "./swagger.json"
+  )
+  .action(async (options) => {
+    try {
+      console.log(`Reading Swagger file from: ${options.input}`);
+      const swaggerContent = await fs.readFile(options.input, "utf-8");
+      const swaggerJson = JSON.parse(swaggerContent);
+
+      const modules = extractModulesFromTags(swaggerJson);
+
+      if (modules.length === 0) {
+        console.log("No modules found in swagger.json operation tags.");
+        console.log("Make sure your operations have proper 'tags' arrays.");
+        return;
+      }
+
+      console.log(`Found ${modules.length} module(s) in swagger.json:`);
+      modules.forEach((module, index) => {
+        console.log(`  ${index + 1}. ${module}`);
+      });
+
+      console.log("\nTo generate any module, run:");
+      modules.forEach((module) => {
+        console.log(`  npm run export --tag ${module}`);
+      });
+    } catch (error) {
+      console.error("Error listing modules:", error);
       process.exit(1);
     }
   });

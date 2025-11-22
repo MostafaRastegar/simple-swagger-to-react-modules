@@ -45,6 +45,8 @@ async function generateAppRouteFile(moduleOutputDir, moduleName, swaggerJson) {
 
 // Generate Next.js page.tsx
 function generatePageFile(moduleName, resourcePaths, swaggerJson) {
+  const modulePascalCase =
+    moduleName.charAt(0).toUpperCase() + moduleName.slice(1);
   const moduleCamelCase =
     moduleName.charAt(0).toLowerCase() + moduleName.slice(1);
 
@@ -52,7 +54,7 @@ function generatePageFile(moduleName, resourcePaths, swaggerJson) {
 
 import { Suspense } from 'react';
 // import { ContactContextProvider } from './_viewModule/contacts.context';
-import { ${moduleCamelCase}View } from './${moduleCamelCase}.view';
+import { ${modulePascalCase}View } from './${moduleCamelCase}.view';
 
 export default function Page() {
   return (
@@ -61,7 +63,7 @@ export default function Page() {
         <p style={{ textAlign: 'center' }}>loading... on initial request</p>
       }
     >
-      <${moduleCamelCase}View />
+      <${modulePascalCase}View />
     </Suspense>
   );
 }
@@ -72,7 +74,9 @@ export default function Page() {
 function generateViewComponent(moduleName, resourcePaths, swaggerJson) {
   const moduleCamelCase =
     moduleName.charAt(0).toLowerCase() + moduleName.slice(1);
-  const modelName = getModelNameFromSwagger(swaggerJson);
+  const modulePascalCase =
+    moduleName.charAt(0).toUpperCase() + moduleName.slice(1);
+  const modelName = getModelNameFromSwagger(moduleName, swaggerJson);
 
   return `'use client';
 
@@ -82,19 +86,19 @@ import { Button, type TableColumnsType } from 'antd';
 import { ContentEditableTable } from 'papak/kits/ContentEditableTable/default';
 import { PageFilterInlineSearch } from '@/components/PageFilterInlineSearch';
 import { ${modelName} } from '@/modules/${moduleName}/domains/models/${modelName}';
-import { ${moduleCamelCase}Presentation } from '@/modules/${moduleName}/${moduleCamelCase}.presentation';
+import { ${modulePascalCase}Presentation } from '@/modules/${moduleName}/${moduleCamelCase}.presentation';
 import { ${moduleCamelCase}Store } from '@/modules/${moduleName}/${moduleCamelCase}.store';
 import AddModal from './_components/AddModal';
 import DeleteModal from './_components/DeleteModal';
 import EditModal from './_components/EditModal';
 
-export function ${moduleCamelCase}View() {
-  const { use${moduleName}List } = ${moduleCamelCase}Presentation();
-  const getAll${moduleName} = use${moduleName}List();
-  const data = getAll${moduleName}.data?.data;
+export function ${modulePascalCase}View() {
+  const { use${modulePascalCase}List } = ${modulePascalCase}Presentation();
+  const getAll${modulePascalCase} = use${modulePascalCase}List();
+  const data = getAll${modulePascalCase}.data?.data;
 
   const columns: TableColumnsType<${modelName}> = [
-    ${generateTableColumns(modelName, resourcePaths, swaggerJson)}
+    ${generateTableColumns(modelName, resourcePaths, swaggerJson, moduleCamelCase)}
   ];
 
   return (
@@ -103,7 +107,7 @@ export function ${moduleCamelCase}View() {
         searchBar={false}
         title={
           <div className='flex items-center gap-2'>
-            <span>${moduleName} Management</span>
+            <span>${modulePascalCase} Management</span>
           </div>
         }
         inlineFilter={() => (
@@ -111,7 +115,7 @@ export function ${moduleCamelCase}View() {
             <div className='mr-auto flex gap-4'>
               <Link href={\`/dashboard/${moduleName}/add\`}>
                 <Button className='mr-auto px-4 text-sm'>
-                  Add Multiple ${moduleName}
+                  Add Multiple ${modulePascalCase}
                 </Button>
               </Link>
               <Button
@@ -123,7 +127,7 @@ export function ${moduleCamelCase}View() {
                   });
                 }}
               >
-                New ${moduleName}
+                New ${modulePascalCase}
               </Button>
             </div>
           </div>
@@ -133,7 +137,7 @@ export function ${moduleCamelCase}View() {
         <ContentEditableTable<${modelName}>
           count={data?.count}
           data={data?.results || []}
-          isPending={getAll${moduleName}.isPending}
+          isPending={getAll${modulePascalCase}.isPending}
           columns={columns}
           rowKey='id'
           paginationPath={\`dashboard/${moduleName}\`}
@@ -158,22 +162,38 @@ const ShowingModals = () => {
 }
 
 // Get model name from swagger definitions
-function getModelNameFromSwagger(swaggerJson) {
+function getModelNameFromSwagger(moduleName, swaggerJson) {
   const definitions = swaggerJson.definitions || {};
   const definitionKeys = Object.keys(definitions);
 
-  // Find main model for the module
+  // Find main model for the module (exclude *Request and *List models)
   const mainModel = definitionKeys.find((key) => {
     const keyLower = key.toLowerCase();
+    const moduleLower = moduleName.toLowerCase();
+
+    // Look for models matching the module name, excluding *Request and *List models
     return (
-      keyLower.includes("pet") ||
-      keyLower.includes("user") ||
-      keyLower.includes("order") ||
-      keyLower === key.toLowerCase()
+      keyLower === moduleLower ||
+      keyLower === moduleLower.substring(0, moduleLower.length - 1) || // singular form
+      (keyLower.includes(moduleLower) &&
+        !keyLower.includes("request") &&
+        !keyLower.includes("list"))
     );
   });
 
-  return mainModel || "Entity";
+  if (mainModel) {
+    return mainModel;
+  }
+
+  // Fallback: try to find any model not ending with Request or List
+  const fallbackModel = definitionKeys.find(
+    (key) =>
+      !key.toLowerCase().includes("request") &&
+      !key.toLowerCase().includes("list") &&
+      !key.toLowerCase().includes("enum")
+  );
+
+  return fallbackModel || "Entity";
 }
 
 // Generate table columns based on model properties
@@ -217,7 +237,6 @@ function generateTableColumns(modelName, resourcePaths, swaggerJson) {
   columns += `
     {
       title: 'Actions',
-      dataIndex: 'actions',
       key: 'actions',
       width: 50,
       render(_, record) {
@@ -225,7 +244,7 @@ function generateTableColumns(modelName, resourcePaths, swaggerJson) {
           <span className='flex items-center gap-4'>
             <IconEdit
               onClick={() => {
-                ${modelName.toLowerCase()}Store.setState({
+                ${moduleCamelCase}Store.setState({
                   selectedRowState: [record],
                   editModalOpen: true,
                 });
@@ -234,7 +253,7 @@ function generateTableColumns(modelName, resourcePaths, swaggerJson) {
             />
             <IconTrash
               onClick={() => {
-                ${modelName.toLowerCase()}Store.setState({
+                ${moduleCamelCase}Store.setState({
                   selectedRowState: [record],
                   deleteModalOpen: true,
                 });

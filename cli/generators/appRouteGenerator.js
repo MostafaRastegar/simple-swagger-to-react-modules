@@ -82,7 +82,7 @@ import { IconEdit, IconTrash } from '@tabler/icons-react';
 import { Button, type TableColumnsType } from 'antd';
 import { ContentEditableTable } from 'papak/kits/ContentEditableTable/default';
 import { PageFilterInlineSearch } from '@/components/PageFilterInlineSearch';
-import { ${modelName} } from '@/modules/${moduleName}/domains/models/${modelName}';
+import { ${modelName} } from '@/modules/${moduleName}/domains/models/${modulePascalCase}';
 import { ${modulePascalCase}Presentation } from '@/modules/${moduleName}/${moduleCamelCase}.presentation';
 import { ${moduleCamelCase}Store } from '@/modules/${moduleName}/${moduleCamelCase}.store';
 import AddModal from './_components/AddModal';
@@ -160,7 +160,8 @@ const ShowingModals = () => {
 
 // Get model name from swagger definitions
 function getModelNameFromSwagger(moduleName, swaggerJson) {
-  const definitions = swaggerJson.definitions || {};
+  const definitions =
+    swaggerJson.components?.schemas || swaggerJson.definitions || {};
   const definitionKeys = Object.keys(definitions);
 
   // Find main model for the module (exclude *Request and *List models)
@@ -194,8 +195,15 @@ function getModelNameFromSwagger(moduleName, swaggerJson) {
 }
 
 // Generate table columns based on model properties
-function generateTableColumns(modelName, resourcePaths, swaggerJson) {
-  const definitions = swaggerJson.definitions || {};
+function generateTableColumns(
+  modelName,
+  resourcePaths,
+  swaggerJson,
+  moduleCamelCase,
+  hasStore
+) {
+  const definitions =
+    swaggerJson.components?.schemas || swaggerJson.definitions || {};
   const model = definitions[modelName];
 
   if (!model || !model.properties) {
@@ -288,3 +296,101 @@ function getFieldWidth(prop) {
 module.exports = {
   generateAppRouteFile,
 };
+
+// Helper function to check if module has store (needs CRUD operations)
+function hasStoreForModule(moduleName, swaggerJson) {
+  const criteria = checkStoreRequirements(moduleName, swaggerJson);
+  return criteria.hasList && (criteria.hasUpdate || criteria.hasDelete);
+}
+
+// Check if module has required operations for store generation
+function checkStoreRequirements(moduleName, swaggerJson) {
+  const paths = swaggerJson.paths || {};
+  let hasList = false;
+  let hasUpdate = false;
+  let hasDelete = false;
+
+  for (const [pathUrl, pathItem] of Object.entries(paths)) {
+    const effectivePath = pathUrl.startsWith("/")
+      ? pathUrl.substring(1)
+      : pathUrl;
+    const pathSegments = effectivePath.split("/");
+    const relevantSegmentIndex = pathSegments.findIndex(
+      (seg) => seg === moduleName
+    );
+
+    if (relevantSegmentIndex !== -1) {
+      for (const [method, operation] of Object.entries(pathItem)) {
+        if (["get", "post", "put", "delete"].includes(method)) {
+          const httpMethod = method.toUpperCase();
+
+          // Check for LIST operation (GET request returning arrays/collections)
+          if (httpMethod === "GET") {
+            // Consider it a list operation if it doesn't have path parameters (or has minimal path params)
+            // or if the operationId contains 'list'
+            const pathParams =
+              operation.parameters?.filter((p) => p.in === "path") || [];
+            const operationId = operation.operationId || "";
+
+            if (
+              pathParams.length === 0 ||
+              operationId.toLowerCase().includes("list")
+            ) {
+              hasList = true;
+            }
+          }
+
+          // Check for UPDATE operations (PUT/PATCH)
+          if (httpMethod === "PUT" || httpMethod === "PATCH") {
+            hasUpdate = true;
+          }
+
+          // Check for DELETE operations
+          if (httpMethod === "DELETE") {
+            hasDelete = true;
+          }
+        }
+      }
+    }
+  }
+
+  return { hasList, hasUpdate, hasDelete };
+}
+
+// Get appropriate hook name for listing operations
+function getListHookName(moduleName, swaggerJson) {
+  const modulePascalCase = capitalize(moduleName);
+
+  // Find the first GET operation that looks like a list ( pagination or array response)
+  const paths = swaggerJson.paths || {};
+  for (const [path, operations] of Object.entries(paths)) {
+    if (
+      operations.get &&
+      path.toLowerCase().includes(moduleName.toLowerCase())
+    ) {
+      const operationId = operations.get.operationId;
+      if (operationId) {
+        // Convert operationId to hook name format
+        // e.g., "category_list" becomes "useCategoryList"
+        const hookName =
+          "use" +
+          operationId
+            .replace(/(_|\s)+/g, " ")
+            .toLowerCase()
+            .split(" ")
+            .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+            .join("");
+
+        return hookName;
+      }
+    }
+  }
+
+  // Fallback to generic hook name
+  return `use${modulePascalCase}List`;
+}
+
+// Capitalize helper function
+function capitalize(str) {
+  return str.charAt(0).toUpperCase() + str.slice(1);
+}

@@ -328,4 +328,5 @@ async function getRelevantModelNamesFromGeneratedFiles(
 
 module.exports = {
   generateStoreFiles,
+  checkStoreRequirements,
 };

@@ -1,10 +1,78 @@
 const { ensureDirectoryExists } = require("../utils");
 
+// Check if module has required operations for store generation
+function checkStoreRequirements(moduleName, swaggerJson) {
+  const paths = swaggerJson.paths || {};
+  let hasList = false;
+  let hasUpdate = false;
+  let hasDelete = false;
+
+  for (const [pathUrl, pathItem] of Object.entries(paths)) {
+    const effectivePath = pathUrl.startsWith("/")
+      ? pathUrl.substring(1)
+      : pathUrl;
+    const pathSegments = effectivePath.split("/");
+    const relevantSegmentIndex = pathSegments.findIndex(
+      (seg) => seg === moduleName
+    );
+
+    if (relevantSegmentIndex !== -1) {
+      for (const [method, operation] of Object.entries(pathItem)) {
+        if (["get", "post", "put", "delete"].includes(method)) {
+          const httpMethod = method.toUpperCase();
+
+          // Check for LIST operation (GET request returning arrays/collections)
+          if (httpMethod === "GET") {
+            // Consider it a list operation if it doesn't have path parameters (or has minimal path params)
+            // or if the operationId contains 'list'
+            const pathParams =
+              operation.parameters?.filter((p) => p.in === "path") || [];
+            const operationId = operation.operationId || "";
+
+            if (
+              pathParams.length === 0 ||
+              operationId.toLowerCase().includes("list")
+            ) {
+              hasList = true;
+            }
+          }
+
+          // Check for UPDATE operations (PUT/PATCH)
+          if (httpMethod === "PUT" || httpMethod === "PATCH") {
+            hasUpdate = true;
+          }
+
+          // Check for DELETE operations
+          if (httpMethod === "DELETE") {
+            hasDelete = true;
+          }
+        }
+      }
+    }
+  }
+
+  return { hasList, hasUpdate, hasDelete };
+}
+
+// Helper function to check if module has store (needs CRUD operations)
+function hasStoreForModule(moduleName, swaggerJson) {
+  const criteria = checkStoreRequirements(moduleName, swaggerJson);
+  return criteria.hasList && (criteria.hasUpdate || criteria.hasDelete);
+}
+
 async function generateModalComponents(
   moduleOutputDir,
   moduleName,
   swaggerJson
 ) {
+  // Skip modal generation for modules without stores (read-only modules)
+  if (!hasStoreForModule(moduleName, swaggerJson)) {
+    console.log(
+      `Skipping modal generation for read-only module: ${moduleName}`
+    );
+    return;
+  }
+
   const moduleCamelCase =
     moduleName.charAt(0).toLowerCase() + moduleName.slice(1);
   const modulePascalCase =

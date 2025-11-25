@@ -78,19 +78,11 @@ async function generateModelFiles(modelsDir, moduleName, swaggerJson) {
     // Use normalized name for processing tracking to avoid duplicates
     const normalizedName = sanitizedSchemaName.toLowerCase();
     if (processedSchemaNames.has(normalizedName)) {
-      console.log(
-        `[DEBUG] addSchemaInterface SKIPPED for ${schemaName} -> ${sanitizedSchemaName}. Already processed.`
-      );
       return;
     }
 
     // Store the mapping for reference resolution
     sanitizedNameMap.set(schemaName, sanitizedSchemaName);
-
-    console.log(
-      `[DEBUG] addSchemaInterface called for: ${schemaName} -> ${sanitizedSchemaName}`,
-      definition
-    );
 
     try {
       const generatedInterface = await generateSingleModelInterface(
@@ -99,14 +91,8 @@ async function generateModelFiles(modelsDir, moduleName, swaggerJson) {
         definitions,
         sanitizedNameMap
       );
-      console.log(
-        `[DEBUG] Generated interface for ${sanitizedSchemaName}:\n${generatedInterface}`
-      );
       allModelContent += generatedInterface;
       processedSchemaNames.add(normalizedName);
-      console.log(
-        `[DEBUG] ${sanitizedSchemaName} added to processedSchemaNames.`
-      );
     } catch (error) {
       console.warn(
         `[WARN] Failed to generate interface for ${sanitizedSchemaName}:`,
@@ -156,7 +142,6 @@ async function generateModelFiles(modelsDir, moduleName, swaggerJson) {
   const basePath = swaggerJson.basePath || "";
 
   for (const [pathUrl, pathItem] of Object.entries(paths)) {
-    console.log(`[DEBUG] Checking path: ${pathUrl}`);
     const effectivePath = pathUrl.startsWith("/")
       ? pathUrl.substring(1)
       : pathUrl;
@@ -166,14 +151,8 @@ async function generateModelFiles(modelsDir, moduleName, swaggerJson) {
       : pathSegments.findIndex((seg) => seg === moduleName);
 
     if (relevantSegmentIndex !== -1) {
-      console.log(
-        `[DEBUG] Path ${pathUrl} relevant for module ${moduleName}. Segment index: ${relevantSegmentIndex}`
-      );
       for (const [method, operation] of Object.entries(pathItem)) {
         if (["get", "post", "put", "delete"].includes(method)) {
-          console.log(
-            `[DEBUG] Processing operation: ${method} ${operation.operationId || "NoOpId"}`
-          );
           // Process request body
           if (operation.requestBody && operation.requestBody.content) {
             for (const mediaType of Object.values(
@@ -183,11 +162,7 @@ async function generateModelFiles(modelsDir, moduleName, swaggerJson) {
                 const schemaName = mediaType.schema.$ref
                   ? mediaType.schema.$ref.split("/").pop()
                   : `${mainModelName}_${camelize(operation.operationId || method)}_Body`; // Fallback for inline schemas
-                console.log(`[DEBUG] Found request body schema: ${schemaName}`);
                 if (schemaName && definitions[schemaName]) {
-                  console.log(
-                    `[DEBUG] Adding request body schema interface: ${schemaName}`
-                  );
                   await addSchemaInterface(schemaName, definitions[schemaName]);
                 }
               }
@@ -208,13 +183,8 @@ async function generateModelFiles(modelsDir, moduleName, swaggerJson) {
                 const schemaName = schema.$ref
                   ? schema.$ref.split("/").pop()
                   : `${mainModelName}_${camelize(operation.operationId || method)}_${responseKey}_Response`; // Fallback for inline schemas
-                console.log(
-                  `[DEBUG] Found response schema for ${responseKey} (from content): ${schemaName}`
-                );
+
                 if (schemaName && definitions[schemaName]) {
-                  console.log(
-                    `[DEBUG] Adding response schema interface: ${schemaName}`
-                  );
                   await addSchemaInterface(schemaName, definitions[schemaName]);
                 }
                 // Handle array responses
@@ -226,13 +196,7 @@ async function generateModelFiles(modelsDir, moduleName, swaggerJson) {
                   const arrayItemSchemaName = schema.items.$ref
                     .split("/")
                     .pop();
-                  console.log(
-                    `[DEBUG] Found array item schema for ${responseKey}: ${arrayItemSchemaName}`
-                  );
                   if (arrayItemSchemaName && definitions[arrayItemSchemaName]) {
-                    console.log(
-                      `[DEBUG] Adding array item schema interface: ${arrayItemSchemaName}`
-                    );
                     await addSchemaInterface(
                       arrayItemSchemaName,
                       definitions[arrayItemSchemaName]
@@ -246,23 +210,14 @@ async function generateModelFiles(modelsDir, moduleName, swaggerJson) {
               const schemaName = responseObj.schema.$ref
                 ? responseObj.schema.$ref.split("/").pop()
                 : `${mainModelName}_${camelize(operation.operationId || method)}_${responseKey}_Response`;
-              console.log(
-                `[DEBUG] Found response schema for ${responseKey} (direct): ${schemaName}`
-              );
+
               if (schemaName && definitions[schemaName]) {
-                console.log(
-                  `[DEBUG] Adding response schema interface: ${schemaName}`
-                );
                 await addSchemaInterface(schemaName, definitions[schemaName]);
               }
             }
           }
         }
       }
-    } else {
-      console.log(
-        `[DEBUG] Path ${pathUrl} NOT relevant for module ${moduleName}. Segment index: ${relevantSegmentIndex}`
-      );
     }
   }
 

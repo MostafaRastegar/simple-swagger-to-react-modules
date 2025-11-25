@@ -25,9 +25,12 @@ async function generatePresentationHooks(
 
   const formDataInterfaceNames = new Set();
   let queryKeysTs = `const ${moduleName}QueryKeys = {\n`;
-  const processedOperationsForQueryKeys = new Set();
 
-  // First pass: collect query keys for common operations
+  // Determine the correct request interface name
+  const requestInterfaceName = `${modelName}Request`;
+
+  // First pass: collect all operations for query keys
+  const allOperations = new Set();
   for (const [pathUrl, pathItem] of Object.entries(paths)) {
     const effectivePath = pathUrl.startsWith("/")
       ? pathUrl.substring(1)
@@ -58,17 +61,26 @@ async function generatePresentationHooks(
           const hookName = `use${moduleName.charAt(0).toUpperCase() + moduleName.slice(1)}${operationSuffix.charAt(0).toUpperCase() + operationSuffix.slice(1)}`;
 
           const isMutation = !["get"].includes(method);
-          const originalMethodName = camelize(
+          let originalMethodName = camelize(
             operationId.replace(new RegExp(moduleName, "i"), "")
           );
 
-          if (!operationId.toLowerCase().includes("help")) {
-            const queryKeyName = originalMethodName.toLowerCase();
-            if (!processedOperationsForQueryKeys.has(queryKeyName)) {
-              queryKeysTs += `  ${queryKeyName}: '${queryKeyName}',\n`;
-              processedOperationsForQueryKeys.add(queryKeyName);
-            }
+          // Apply the same naming conversion as service generator
+          if (originalMethodName.includes("_")) {
+            const parts = originalMethodName.split("_");
+            originalMethodName =
+              parts[0].toLowerCase() +
+              parts[1].charAt(0).toUpperCase() +
+              parts[1].slice(1);
+          } else {
+            originalMethodName =
+              originalMethodName.charAt(0).toLowerCase() +
+              originalMethodName.slice(1);
           }
+
+          // Add all operations to query keys including help operations
+          allOperations.add(originalMethodName);
+          queryKeysTs += `  ${originalMethodName}: '${originalMethodName}',\n`;
         }
       }
     }
@@ -92,9 +104,7 @@ async function generatePresentationHooks(
             operation.operationId ||
             `${method}_${pathUrl.replace(/\//g, "_").replace(/\{|\}/g, "")}`;
 
-          if (operationId.toLowerCase().includes("help")) {
-            continue;
-          }
+          // Process all operations including help operations
 
           let operationSuffix = operationId.replace(
             new RegExp(moduleName, "i"),
@@ -109,9 +119,26 @@ async function generatePresentationHooks(
 
           const hookName = `use${moduleName.charAt(0).toUpperCase() + moduleName.slice(1)}${operationSuffix.charAt(0).toUpperCase() + operationSuffix.slice(1)}`;
 
-          const originalMethodName = camelize(
+          let originalMethodName = camelize(
             operationId.replace(new RegExp(moduleName, "i"), "")
           );
+
+          // Convert PascalCase to camelCase for method names to match service interface
+          // Handle sub-module operations like "help_List" -> "helpList"
+          if (originalMethodName.includes("_")) {
+            // For sub-module operations like "_help_list" -> "helpList"
+            const parts = originalMethodName.split("_");
+            originalMethodName =
+              parts[0].toLowerCase() +
+              parts[1].charAt(0).toUpperCase() +
+              parts[1].slice(1);
+          } else {
+            // For main operations like "List" -> "list"
+            originalMethodName =
+              originalMethodName.charAt(0).toLowerCase() +
+              originalMethodName.slice(1);
+          }
+
           const isMutation = !["get"].includes(method);
 
           let hookFn = isMutation ? "useMutation" : "useQuery";
@@ -125,7 +152,7 @@ async function generatePresentationHooks(
 
           let hookSignature = "()";
           let serviceCallArgs = "";
-          let queryKeyArray = `[${moduleName}QueryKeys.${originalMethodName.toLowerCase()}]`;
+          let queryKeyArray = `[${moduleName}QueryKeys.${originalMethodName}]`;
 
           if (
             pathParams.length === 1 &&
@@ -164,32 +191,32 @@ async function generatePresentationHooks(
               if (serviceCallArgs.includes("({ id })")) {
                 mutationFnString = `mutationFn: ({ id }: { id: number }) => Service.${originalMethodName}(id)`;
               } else if (serviceCallArgs.includes("({ id, body })")) {
-                mutationFnString = `mutationFn: ({ id, body }: { id: number; body: CategoryRequest }) => Service.${originalMethodName}(id, body)`;
+                mutationFnString = `mutationFn: ({ id, body }: { id: number; body: ${requestInterfaceName} }) => Service.${originalMethodName}(id, body)`;
               }
             } else if (serviceCallArgs === "body") {
-              mutationFnString = `mutationFn: (body: CategoryRequest) => Service.${originalMethodName}(body)`;
+              mutationFnString = `mutationFn: (body: ${requestInterfaceName}) => Service.${originalMethodName}(body)`;
             } else if (serviceCallArgs === "()") {
               // Handle operations with no parameters
               mutationFnString = `mutationFn: () => Service.${originalMethodName}()`;
             }
 
             let keysToInvalidate = [];
-            if (processedOperationsForQueryKeys.has("list")) {
+            if (allOperations.has("list")) {
               keysToInvalidate.push(`${moduleName}QueryKeys.list`);
             }
-            if (processedOperationsForQueryKeys.has("retrieve")) {
+            if (allOperations.has("retrieve")) {
               keysToInvalidate.push(`${moduleName}QueryKeys.retrieve`);
             }
 
             let keysToInvalidateWithOptions = [];
             // List queries use exact match
-            if (processedOperationsForQueryKeys.has("list")) {
+            if (allOperations.has("list")) {
               keysToInvalidateWithOptions.push(
                 `{ queryKey: [${moduleName}QueryKeys.list] }`
               );
             }
             // Retrieve queries use non-exact match (to invalidate all retrieval queries regardless of ID)
-            if (processedOperationsForQueryKeys.has("retrieve")) {
+            if (allOperations.has("retrieve")) {
               keysToInvalidateWithOptions.push(
                 `{ queryKey: [${moduleName}QueryKeys.retrieve], exact: false }`
               );
@@ -225,7 +252,7 @@ async function generatePresentationHooks(
               currentServiceCallArgs = "id";
               currentEnabledCondition = `enabled: !!id`;
               // Update queryKeyArray to include the ID for per-item caching
-              queryKeyArray = `[${moduleName}QueryKeys.${originalMethodName.toLowerCase()}, id]`;
+              queryKeyArray = `[${moduleName}QueryKeys.${originalMethodName}, id]`;
             } else if (queryParams.length > 0) {
               currentEnabledCondition = `enabled: Object.keys(params || {}).length > 0`;
             }
@@ -246,15 +273,15 @@ async function generatePresentationHooks(
 
   const formDataImports = [];
   const formDataImportLine = "";
-
-  // Determine the correct request interface name
-  const requestInterfaceName = `${modelName}Request`;
   const usedTypes = new Set();
 
   // Extract used types from hookMethodsTs to build proper imports
-  const importMatches = hookMethodsTs.match(
-    /CategoriesCreateParams|[A-Z][a-zA-Z]*Request/g
+  // Use dynamic regex pattern based on current module instead of hardcoded names
+  const typePattern = new RegExp(
+    `${mainModelName}CreateParams|[A-Z][a-zA-Z]*Request`,
+    "g"
   );
+  const importMatches = hookMethodsTs.match(typePattern);
   if (importMatches) {
     importMatches.forEach((match) => usedTypes.add(match));
   }

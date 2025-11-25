@@ -37,9 +37,7 @@ async function updateEndpointsFile(
       );
       existingBaseUrl = baseUrlMatch ? baseUrlMatch[1] : baseUrl;
 
-      console.log(
-        `Found existing endpoints file, will preserve current modules`
-      );
+      // Found existing endpoints file, will preserve current modules
     } catch (parseError) {
       console.warn(
         `Error reading existing endpoints.ts: ${parseError}. Starting fresh.`
@@ -246,19 +244,41 @@ function generateModuleEndpointsSwagger(moduleName, swaggerJson, baseUrl) {
 
           // Process path segments for new naming convention
           const pathSegments = pathUrl.substring(1).split("/"); // Removes leading '/' and splits
-          const processedPathSegments = pathSegments.map((segment) => {
+          const processedPathSegments = [];
+          let skipNext = false;
+
+          for (let i = 0; i < pathSegments.length; i++) {
+            if (skipNext) {
+              skipNext = false;
+              continue;
+            }
+
+            const segment = pathSegments[i];
+            if (!segment) continue; // Skip empty segments
+            const nextSegment = pathSegments[i + 1];
+
             if (segment.startsWith("{") && segment.endsWith("}")) {
               // It's a path parameter, e.g., {petId} or {id}
               const paramName = segment.slice(1, -1); // Extract 'petId' or 'id'
-              return paramName.toUpperCase(); // e.g., 'PETID' or 'ID'
+              processedPathSegments.push(paramName.toUpperCase()); // e.g., 'PETID' or 'ID'
             } else {
-              // It's a regular path segment, e.g., 'pet' or 'uploadImage'
-              // Handle camelCase by inserting underscore before capital letters
-              return segment
-                .replace(/([a-z])([A-Z])/g, "$1_$2") // e.g., 'uploadImage' -> 'upload_Image'
-                .toUpperCase(); // e.g., 'UPLOAD_IMAGE'
+              // Skip API version pattern (api/v1, api/v2, etc.)
+              if (
+                segment.toLowerCase() === "api" &&
+                nextSegment &&
+                /^v\d+$/.test(nextSegment)
+              ) {
+                skipNext = true; // Skip both api and v1 segments
+              } else {
+                // Regular path segment
+                processedPathSegments.push(
+                  segment
+                    .replace(/([a-z])([A-Z])/g, "$1_$2") // Handle camelCase
+                    .toUpperCase()
+                );
+              }
             }
-          });
+          }
 
           const endpointNameSuffix = processedPathSegments.join("_"); // Join with underscores
           const finalEndpointName = `${httpMethod}_${endpointNameSuffix}`;

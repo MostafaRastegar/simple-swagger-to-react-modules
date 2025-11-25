@@ -53,9 +53,24 @@ async function generateServiceInterface(
             operation.operationId ||
             `${method}_${pathUrl.replace(/\//g, "_").replace(/\{|\}/g, "")}`;
 
-          const methodName = camelize(
+          let methodName = camelize(
             operationId.replace(new RegExp(moduleName, "i"), "")
           );
+
+          // Convert PascalCase to camelCase for method names
+          // Handle sub-module operations like "help_List" -> "helpList"
+          if (methodName.includes("_")) {
+            // For sub-module operations like "_help_list" -> "helpList"
+            const parts = methodName.split("_");
+            methodName =
+              parts[0].toLowerCase() +
+              parts[1].charAt(0).toUpperCase() +
+              parts[1].slice(1);
+          } else {
+            // For main operations like "List" -> "list"
+            methodName =
+              methodName.charAt(0).toLowerCase() + methodName.slice(1);
+          }
 
           let paramsTs = "";
           const allParams = operation.parameters || [];

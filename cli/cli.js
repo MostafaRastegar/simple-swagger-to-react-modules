@@ -89,8 +89,8 @@ program
         : extractModulesFromTags(swaggerJson);
 
       if (modulesToGenerate.length === 0) {
-        console.log("No modules found to generate!");
-        console.log(
+        console.error("No modules found to generate!");
+        console.error(
           "Either provide a specific module name with -m, or make sure operations have proper 'tags' arrays."
         );
         process.exit(1);
@@ -112,8 +112,6 @@ program
 
       // Generate each module
       for (const moduleName of modulesToGenerate) {
-        console.log(`\n=== Generating module: ${moduleName} ===`);
-
         const moduleOutputDir = path.join(
           process.cwd(),
           options.outputDir,
@@ -125,10 +123,8 @@ program
         await ensureDirectoryExists(modelsDir);
         await ensureDirectoryExists(domainsDir);
 
-        console.log("Generating models...");
         await generateModelFiles(modelsDir, moduleName, swaggerJson);
 
-        console.log("Generating service interface...");
         await generateServiceInterface(
           domainsDir,
           moduleName,
@@ -136,7 +132,6 @@ program
           options.baseUrl
         );
 
-        console.log("Generating service implementation...");
         await generateServiceImplementation(
           moduleOutputDir,
           moduleName,
@@ -144,30 +139,24 @@ program
           options.baseUrl
         );
 
-        console.log("Generating presentation hooks...");
         await generatePresentationHooks(
           moduleOutputDir,
           moduleName,
           swaggerJson
         );
 
-        console.log("Generating store files...");
         await generateStoreFiles(moduleOutputDir, moduleName, swaggerJson);
 
-        console.log("Generating app routes and UI components...");
         await generateAppRouteFile(moduleOutputDir, moduleName, swaggerJson);
 
         await generateModalComponents(moduleOutputDir, moduleName, swaggerJson);
 
-        console.log("Updating/Creating endpoints.ts...");
         await updateEndpointsFile(
           constantsDir,
           moduleName,
           swaggerJson,
           options.baseUrl
         );
-
-        console.log(`✅ Successfully generated module: ${moduleName}`);
       }
 
       console.log(
@@ -210,7 +199,7 @@ program
         console.error(
           `Module '${options.moduleName}' not found at ${moduleOutputDir}`
         );
-        console.log(
+        console.error(
           "Please run 'npm run generate' first to create the module structure."
         );
         process.exit(1);
@@ -221,7 +210,6 @@ program
       const swaggerJson = JSON.parse(swaggerContent);
 
       // Generate UI components
-      console.log("Generating app routes and UI components...");
       await generateAppRouteFile(
         moduleOutputDir,
         options.moduleName,

@@ -283,15 +283,8 @@ function getModelNameFromSwagger(swaggerJson) {
   const definitions = swaggerJson.definitions || {};
   const definitionKeys = Object.keys(definitions);
 
-  const mainModel = definitionKeys.find((key) => {
-    const keyLower = key.toLowerCase();
-    return (
-      keyLower.includes("pet") ||
-      keyLower.includes("user") ||
-      keyLower.includes("order") ||
-      keyLower === key.toLowerCase()
-    );
-  });
+  // Use the first definition as the main model
+  const mainModel = definitionKeys.length > 0 ? definitionKeys[0] : null;
 
   return mainModel || "Entity";
 }

@@ -74,6 +74,7 @@ async function generateServiceImplementation(
                 processedPathSegments.push(
                   segment
                     .replace(/([a-z])([A-Z])/g, "$1_$2") // Handle camelCase
+                    .replace(/[^a-zA-Z0-9]/g, "_") // Replace hyphens and special chars with underscores
                     .toUpperCase()
                 );
               }
@@ -132,79 +133,68 @@ async function generateServiceImplementation(
           let methodParamSignature = "";
           let methodCallArgs = "";
           let endpointCallArgs = "";
-          let paramsObject = {};
+          let pathParamNames = [];
+          let queryParamNames = [];
 
-          if (
-            pathParams.length === 1 &&
-            pathParams[0].name === "id" &&
-            !queryParams.length &&
-            !bodyParam &&
-            !formDataParams.length
-          ) {
-            // Case: only 'id' parameter
-            methodParamSignature = "(id)";
-            methodCallArgs = "id";
-            endpointCallArgs = "id";
-          } else if (bodyParam || formDataParams.length > 0) {
-            // Case: has body or formData
-            if (
-              pathParams.length === 1 &&
-              pathParams[0].name === "id" &&
-              !queryParams.length
-            ) {
-              // Case: 'id' and 'body' (e.g., Update)
-              methodParamSignature = "(id, body)";
-              methodCallArgs = "id, body";
-              endpointCallArgs = "id";
-            } else if (queryParams.length > 0 || pathParams.length > 0) {
-              // Case: path/query params and body
-              const pathQueryParams = [];
-              for (const param of allParams) {
-                if (param.in === "path" || param.in === "query") {
-                  paramsObject[param.name] = param.name;
-                }
-              }
+          // Separate path and query parameters
+          for (const param of allParams) {
+            if (param.in === "path") {
+              pathParamNames.push(param.name);
+            } else if (param.in === "query") {
+              queryParamNames.push(param.name);
+            }
+          }
+
+          // Build endpoint call arguments (path params in order)
+          endpointCallArgs = pathParamNames.join(", ");
+
+          if (bodyParam || formDataParams.length > 0) {
+            // Has body parameter
+            if (queryParamNames.length > 0) {
+              // Has both query params and body - pass as params object and body
               methodParamSignature = "(params, body)";
               methodCallArgs = "params, body";
-              endpointCallArgs = Object.keys(paramsObject).join(", ");
             } else {
-              // Case: only 'body' (e.g., Create)
-              methodParamSignature = "(body)";
-              methodCallArgs = "body";
-              endpointCallArgs = ""; // No path params
-            }
-          } else if (queryParams.length > 0 || pathParams.length > 0) {
-            // Case: only path/query params
-            if (
-              method === "get" &&
-              pathParams.length === 0 &&
-              queryParams.length > 0
-            ) {
-              // Special handling for GET requests with only query parameters (e.g., List methods)
-              for (const param of queryParams) {
-                paramsObject[param.name] = param.name;
+              // Only body parameter
+              if (pathParamNames.length > 0) {
+                // Has both path params and body
+                methodParamSignature = `(${pathParamNames.join(", ")}, body)`;
+                methodCallArgs = `${pathParamNames.join(", ")}, body`;
+              } else {
+                // Only body
+                methodParamSignature = "(body)";
+                methodCallArgs = "body";
               }
-              methodParamSignature = "(params)";
-              methodCallArgs = "params";
-              endpointCallArgs = ""; // No path arguments for GET endpoint
-            } else {
-              // For other cases (POST with path/query, GET with path params, etc.)
-              for (const param of allParams) {
-                if (param.in === "path" || param.in === "query") {
-                  if (param.in === "path") {
-                    paramsObject[param.name] = param.name;
-                  }
-                }
-              }
-              methodParamSignature = "(params)";
-              methodCallArgs = "params";
-              endpointCallArgs = Object.keys(paramsObject).join(", ");
             }
           } else {
-            // Default case: no parameters
-            methodParamSignature = "()";
-            methodCallArgs = "";
-            endpointCallArgs = "";
+            // No body parameter
+            if (pathParamNames.length > 0 && queryParamNames.length > 0) {
+              // Has both path params and query params
+              methodParamSignature = `(${pathParamNames.join(", ")}, params)`;
+              methodCallArgs = `${pathParamNames.join(", ")}, params`;
+            } else if (
+              pathParamNames.length === 1 &&
+              pathParamNames[0] === "id" &&
+              queryParamNames.length === 0
+            ) {
+              // Simple case: only 'id' path param
+              methodParamSignature = "(id)";
+              methodCallArgs = "id";
+            } else if (pathParamNames.length > 0) {
+              // Only path params (no query params or body)
+              methodParamSignature = `(${pathParamNames.join(", ")})`;
+              methodCallArgs = pathParamNames.join(", ");
+            } else if (queryParamNames.length > 0) {
+              // Only query params
+              methodParamSignature = "(params)";
+              methodCallArgs = "params";
+              endpointCallArgs = ""; // No path args needed for GET
+            } else {
+              // No parameters
+              methodParamSignature = "()";
+              methodCallArgs = "";
+              endpointCallArgs = "";
+            }
           }
 
           // Generate the request call
@@ -251,7 +241,8 @@ async function generateServiceImplementation(
     `export function ${serviceName}(): ${interfaceName} {\n` +
     `  return {\n${serviceMethodsTs}\n  };\n` +
     `}\n\n`;
-  const finalContent = await formatCode(content, "typescript");
+  // Use content directly without formatting to avoid Prettier corruption of long property names
+  const finalContent = content;
   await fs.writeFile(
     path.join(moduleOutputDir, `${moduleDirName}.service.ts`),
     finalContent

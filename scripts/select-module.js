@@ -56,9 +56,11 @@ async function getAvailableModules() {
 async function displayModules(modules) {
   console.log("\n🔍 Available modules in swagger.json:\n");
   modules.forEach((module, index) => {
-    console.log(`${index + 1}. ${module.name}`);
-    console.log(`   ${module.description}`);
-    console.log("");
+    console.log(
+      `${index < 9 ? "0" + (index + 1).toString() : index + 1}. ${module.name}`
+    );
+    // console.log(`   ${module.description}`);
+    // console.log("");
   });
   console.log("0. Exit");
   console.log("");

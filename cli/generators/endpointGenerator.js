@@ -163,41 +163,44 @@ function replaceExistingModule(content, moduleName, newModuleContent) {
  */
 function appendNewModule(content, newModuleContent) {
   // Find the position of the closing brace of the endpoints object
-  const lastBraceIndex = content.lastIndexOf("}");
-  if (lastBraceIndex !== -1) {
-    // Check if there's already a comma after the last module (before the closing brace)
-    let insertIndex = lastBraceIndex;
-    let hasTrailingComma = false;
+  const endpointsCloseIndex = content.lastIndexOf("};");
 
-    // Look backwards from the closing brace to find if there's a trailing comma
-    for (let i = lastBraceIndex - 1; i >= 0; i--) {
-      if (content[i] === "," || content[i].trim() === "") {
-        continue;
-      } else if (content[i] === "}") {
-        // This is the closing brace we found
-        hasTrailingComma = true;
-        break;
-      } else {
-        // Found non-comma, non-whitespace character
-        break;
-      }
-    }
-
-    if (hasTrailingComma) {
-      // There's already a comma, so just add the new module
-      const beforeBrace = content.substring(0, lastBraceIndex);
-      const afterBrace = content.substring(lastBraceIndex);
-      return beforeBrace + `  ${newModuleContent}\n` + afterBrace;
-    } else {
-      // No trailing comma, so we need to add one and then the new module
-      const beforeBrace = content.substring(0, lastBraceIndex);
-      const afterBrace = content.substring(lastBraceIndex);
-      return beforeBrace + `,\n  ${newModuleContent}\n` + afterBrace;
-    }
+  if (endpointsCloseIndex === -1) {
+    // Fallback: just add to the end
+    return content.replace(/};?$/, `  ${newModuleContent}\n};`);
   }
 
-  // Fallback: just add to the end
-  return content + `,\n  ${newModuleContent}`;
+  // Insert the new module before the final };
+  const beforeClosing = content.substring(0, endpointsCloseIndex);
+  const closingBrace = content.substring(endpointsCloseIndex);
+
+  // Find the last module to check if we need a comma
+  const lastModuleBraceIndex = beforeClosing.lastIndexOf("}");
+
+  if (lastModuleBraceIndex !== -1) {
+    // Check what's between the last module brace and the endpoints close
+    const betweenText = content
+      .substring(lastModuleBraceIndex + 1, endpointsCloseIndex)
+      .trim();
+
+    // Find where to insert - right before the endpoints object's closing comma/braces
+    let insertIndex = endpointsCloseIndex - 1; // Before the ;
+    while (insertIndex >= 0 && content[insertIndex].trim() === "") {
+      insertIndex--; // Skip whitespace
+    }
+
+    // Insert new module content right before the closing
+    const result =
+      content.substring(0, insertIndex + 1) +
+      `\n  ${newModuleContent},` +
+      content.substring(insertIndex + 1);
+
+    return result;
+  }
+
+  // If we can't find module structure, use simple fallback
+  console.log("DEBUG: Using simple fallback");
+  return beforeClosing + `\n  ${newModuleContent}` + closingBrace;
 }
 
 /**
@@ -274,6 +277,7 @@ function generateModuleEndpointsSwagger(moduleName, swaggerJson, baseUrl) {
                 processedPathSegments.push(
                   segment
                     .replace(/([a-z])([A-Z])/g, "$1_$2") // Handle camelCase
+                    .replace(/[^a-zA-Z0-9]/g, "_") // Replace hyphens and special chars with underscores
                     .toUpperCase()
                 );
               }

@@ -19,10 +19,7 @@ function extractModulesFromTags(swaggerJson) {
       Object.values(pathObj).forEach((operation) => {
         if (operation.tags && Array.isArray(operation.tags)) {
           operation.tags.forEach((tag) => {
-            // Filter out common non-module tags
-            if (!["pet", "store", "user"].includes(tag.toLowerCase())) {
-              moduleSet.add(tag);
-            }
+            moduleSet.add(tag);
           });
         }
       });

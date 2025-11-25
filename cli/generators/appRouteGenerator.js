@@ -8,10 +8,7 @@ async function generateAppRouteFile(moduleOutputDir, moduleName, swaggerJson) {
     const pathLower = path.toLowerCase();
     return (
       pathLower.includes(`/${moduleName.toLowerCase()}`) ||
-      pathLower.includes(`/${moduleName.toLowerCase()}/`) ||
-      (!pathLower.includes("/user/") &&
-        !pathLower.includes("/store/") &&
-        !pathLower.includes("/pet/"))
+      pathLower.includes(`/${moduleName.toLowerCase()}/`)
     );
   });
 

@@ -99,3 +99,4 @@ jspm_packages/
 *.tsbuildinfo
 
 src/
+swagger.json

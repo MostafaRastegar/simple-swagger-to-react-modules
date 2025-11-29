@@ -1,37 +1,7 @@
 const fs = require("fs").promises;
 const path = require("path");
-const { formatCode, camelize } = require("../../utils");
+const { formatCode, camelize, sanitizeInterfaceName } = require("../../utils");
 const { generateSingleModelInterface } = require("./interface.model");
-
-/**
- * Sanitizes schema names to create valid TypeScript interface names
- * @param {string} name - The raw schema name from swagger
- * @returns {string} - A valid PascalCase interface name
- */
-function sanitizeInterfaceName(name) {
-  if (!name) return "Interface";
-
-  // Replace spaces with underscores, remove special chars, and make PascalCase
-  let cleaned = name
-    .replace(/\s+/g, "_") // spaces to underscores
-    .replace(/[^a-zA-Z0-9_]/g, "_") // special chars to underscores
-    .replace(/^_+|_+$/g, "") // remove leading/trailing underscores
-    .split("_") // split by underscore
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()) // PascalCase each word
-    .join("");
-
-  // Ensure it starts with a letter (TypeScript interface names can't start with numbers)
-  if (/^[0-9]/.test(cleaned)) {
-    cleaned = "Interface" + cleaned;
-  }
-
-  // Remove empty strings and ensure minimum length
-  if (cleaned.length < 1) {
-    cleaned = "Interface";
-  }
-
-  return cleaned;
-}
 
 /**
  * Generates model files for a given module.
@@ -42,17 +12,21 @@ function sanitizeInterfaceName(name) {
 async function generateModelFiles(modelsDir, moduleName, swaggerJson) {
   const definitions =
     swaggerJson.definitions || swaggerJson.components?.schemas || {};
-  const mainModelName =
-    moduleName.charAt(0).toUpperCase() + moduleName.slice(1);
 
-  let mainModelDefinition = definitions[mainModelName];
+  // Keep original module name for definition lookups
+  const originalModelName =
+    moduleName.charAt(0).toUpperCase() + moduleName.slice(1);
+  // Sanitize for interface/file names
+  const mainModelName = sanitizeInterfaceName(originalModelName);
+
+  let mainModelDefinition = definitions[originalModelName];
 
   // If main definition not found, try common singular forms
   if (!mainModelDefinition) {
     const singularForms = [
-      mainModelName.slice(0, -1), // e.g., Categories -> Categorie
-      mainModelName.replace(/s$/, ""), // e.g., Categories -> Category
-      mainModelName.replace(/ies$/, "y"), // e.g., Categories -> Category
+      originalModelName.slice(0, -1), // e.g., Categories -> Categorie
+      originalModelName.replace(/s$/, ""), // e.g., Categories -> Category
+      originalModelName.replace(/ies$/, "y"), // e.g., Categories -> Category
     ];
     for (const form of singularForms) {
       if (definitions[form]) {

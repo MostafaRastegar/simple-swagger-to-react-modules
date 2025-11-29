@@ -1,6 +1,11 @@
 const fs = require("fs").promises;
 const path = require("path");
-const { formatCode, camelize, mapSwaggerTypeToTs } = require("../utils");
+const {
+  formatCode,
+  camelize,
+  mapSwaggerTypeToTs,
+  sanitizeInterfaceName,
+} = require("../utils");
 
 /**
  * Generates presentation hooks for a given module.
@@ -13,10 +18,13 @@ async function generatePresentationHooks(
   moduleName,
   swaggerJson
 ) {
-  const serviceName = `${moduleName.charAt(0).toUpperCase() + moduleName.slice(1)}Service`;
   const modelName = moduleName.charAt(0).toUpperCase() + moduleName.slice(1);
+  // Sanitize for TypeScript identifiers
+  const sanitizedModelName = sanitizeInterfaceName(modelName);
+  const serviceName = `${sanitizedModelName}Service`;
   const moduleDirName = moduleName.toLowerCase();
-  const mainModelName = modelName;
+  const mainModelName = sanitizedModelName;
+  const sanitizedModuleName = sanitizeInterfaceName(moduleName);
   const definitions = swaggerJson.definitions || {};
 
   let hookMethodsTs = "";
@@ -24,10 +32,10 @@ async function generatePresentationHooks(
   const basePath = swaggerJson.basePath || "";
 
   const formDataInterfaceNames = new Set();
-  let queryKeysTs = `const ${moduleName}QueryKeys = {\n`;
+  let queryKeysTs = `const ${sanitizedModuleName}QueryKeys = {\n`;
 
   // Determine the correct request interface name
-  const requestInterfaceName = `${modelName}Request`;
+  const requestInterfaceName = `${sanitizedModelName}Request`;
 
   // First pass: collect all operations for query keys
   const allOperations = new Set();
@@ -51,14 +59,17 @@ async function generatePresentationHooks(
             new RegExp(moduleName, "i"),
             ""
           );
+          // Clean up underscores and make PascalCase
           operationSuffix = operationSuffix
             .split("_")
             .map((part, index) =>
               index === 0 ? part : part.charAt(0).toUpperCase() + part.slice(1)
             )
             .join("");
+          // Sanitize to remove all special characters and ensure valid identifier
+          operationSuffix = sanitizeInterfaceName(operationSuffix);
 
-          const hookName = `use${moduleName.charAt(0).toUpperCase() + moduleName.slice(1)}${operationSuffix.charAt(0).toUpperCase() + operationSuffix.slice(1)}`;
+          const hookName = `use${sanitizedModelName}${operationSuffix}`;
 
           const isMutation = !["get"].includes(method);
           let originalMethodName = camelize(
@@ -116,8 +127,10 @@ async function generatePresentationHooks(
               index === 0 ? part : part.charAt(0).toUpperCase() + part.slice(1)
             )
             .join("");
+          // Sanitize to remove all special characters and ensure valid identifier
+          operationSuffix = sanitizeInterfaceName(operationSuffix);
 
-          const hookName = `use${moduleName.charAt(0).toUpperCase() + moduleName.slice(1)}${operationSuffix.charAt(0).toUpperCase() + operationSuffix.slice(1)}`;
+          const hookName = `use${sanitizedModelName}${operationSuffix}`;
 
           let originalMethodName = camelize(
             operationId.replace(new RegExp(moduleName, "i"), "")
@@ -126,14 +139,12 @@ async function generatePresentationHooks(
           // Convert PascalCase to camelCase for method names to match service interface
           // Handle sub-module operations like "help_List" -> "helpList"
           if (originalMethodName.includes("_")) {
-            // For sub-module operations like "_help_list" -> "helpList"
             const parts = originalMethodName.split("_");
             originalMethodName =
               parts[0].toLowerCase() +
               parts[1].charAt(0).toUpperCase() +
               parts[1].slice(1);
           } else {
-            // For main operations like "List" -> "list"
             originalMethodName =
               originalMethodName.charAt(0).toLowerCase() +
               originalMethodName.slice(1);
@@ -152,7 +163,7 @@ async function generatePresentationHooks(
 
           let hookSignature = "()";
           let serviceCallArgs = "";
-          let queryKeyArray = `[${moduleName}QueryKeys.${originalMethodName}]`;
+          let queryKeyArray = `[${sanitizedModuleName}QueryKeys.${originalMethodName}]`;
 
           if (
             pathParams.length === 1 &&
@@ -202,23 +213,23 @@ async function generatePresentationHooks(
 
             let keysToInvalidate = [];
             if (allOperations.has("list")) {
-              keysToInvalidate.push(`${moduleName}QueryKeys.list`);
+              keysToInvalidate.push(`${sanitizedModuleName}QueryKeys.list`);
             }
             if (allOperations.has("retrieve")) {
-              keysToInvalidate.push(`${moduleName}QueryKeys.retrieve`);
+              keysToInvalidate.push(`${sanitizedModuleName}QueryKeys.retrieve`);
             }
 
             let keysToInvalidateWithOptions = [];
             // List queries use exact match
             if (allOperations.has("list")) {
               keysToInvalidateWithOptions.push(
-                `{ queryKey: [${moduleName}QueryKeys.list] }`
+                `{ queryKey: [${sanitizedModuleName}QueryKeys.list] }`
               );
             }
             // Retrieve queries use non-exact match (to invalidate all retrieval queries regardless of ID)
             if (allOperations.has("retrieve")) {
               keysToInvalidateWithOptions.push(
-                `{ queryKey: [${moduleName}QueryKeys.retrieve], exact: false }`
+                `{ queryKey: [${sanitizedModuleName}QueryKeys.retrieve], exact: false }`
               );
             }
 
@@ -252,7 +263,7 @@ async function generatePresentationHooks(
               currentServiceCallArgs = "id";
               currentEnabledCondition = `enabled: !!id`;
               // Update queryKeyArray to include the ID for per-item caching
-              queryKeyArray = `[${moduleName}QueryKeys.${originalMethodName}, id]`;
+              queryKeyArray = `[${sanitizedModuleName}QueryKeys.${originalMethodName}, id]`;
             } else if (queryParams.length > 0) {
               currentEnabledCondition = `enabled: Object.keys(params || {}).length > 0`;
             }
@@ -303,7 +314,7 @@ async function generatePresentationHooks(
     `${queryKeysTs}` +
     `// PRESENTATION LAYER\n` +
     `// React Query hooks for ${moduleName}\n` +
-    `export function ${moduleName.charAt(0).toUpperCase() + moduleName.slice(1)}Presentation() {\n` +
+    `export function ${sanitizedModelName}Presentation() {\n` +
     `  const Service = ${serviceName}();\n` +
     `  const queryClient = useQueryClient();\n` +
     `  return {\n${hookMethodsTs}\n  };\n` +

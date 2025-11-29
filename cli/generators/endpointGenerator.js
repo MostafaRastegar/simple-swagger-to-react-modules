@@ -4,6 +4,7 @@ const {
   formatCode,
   mapSwaggerTypeToTs,
   camelize,
+  sanitizeInterfaceName,
   fileExists,
 } = require("../utils");
 
@@ -22,7 +23,8 @@ async function updateEndpointsFile(
 ) {
   const endpointFileName = "endpoints.ts";
   const endpointFilePath = path.join(constantsDir, endpointFileName);
-  const moduleConstantName = moduleName.toUpperCase();
+  // Sanitize module name for valid object property names
+  const moduleConstantName = sanitizeInterfaceName(moduleName).toUpperCase();
 
   let existingContent = "";
   let existingBaseUrl = baseUrl;

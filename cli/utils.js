@@ -75,6 +75,36 @@ function camelize(str) {
 }
 
 /**
+ * Sanitizes schema names to create valid TypeScript interface names
+ * @param {string} name - The raw schema name from swagger
+ * @returns {string} - A valid PascalCase interface name
+ */
+function sanitizeInterfaceName(name) {
+  if (!name) return "Interface";
+
+  // Replace spaces with underscores, remove special chars, and make PascalCase
+  let cleaned = name
+    .replace(/\s+/g, "_") // spaces to underscores
+    .replace(/[^a-zA-Z0-9_]/g, "_") // special chars to underscores
+    .replace(/^_+|_+$/g, "") // remove leading/trailing underscores
+    .split("_") // split by underscore
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()) // PascalCase each word
+    .join("");
+
+  // Ensure it starts with a letter (TypeScript interface names can't start with numbers)
+  if (/^[0-9]/.test(cleaned)) {
+    cleaned = "Interface" + cleaned;
+  }
+
+  // Remove empty strings and ensure minimum length
+  if (cleaned.length < 1) {
+    cleaned = "Interface";
+  }
+
+  return cleaned;
+}
+
+/**
  * Checks if a file exists at the given path.
  * @param {string} filePath - The path to the file.
  * @returns {Promise<boolean>} True if the file exists, false otherwise.
@@ -108,6 +138,7 @@ module.exports = {
   formatCode,
   mapSwaggerTypeToTs,
   camelize,
+  sanitizeInterfaceName,
   fileExists,
   ensureDirectoryExists,
 };

@@ -1,6 +1,6 @@
 const fs = require("fs").promises;
 const path = require("path");
-const { formatCode, camelize } = require("../../utils");
+const { formatCode, camelize, sanitizeInterfaceName } = require("../../utils");
 
 /**
  * Generates the service implementation file.
@@ -15,13 +15,15 @@ async function generateServiceImplementation(
   swaggerJson,
   baseUrl
 ) {
-  const serviceName = `${moduleName.charAt(0).toUpperCase() + moduleName.slice(1)}Service`;
-  const interfaceName = `I${moduleName.charAt(0).toUpperCase() + moduleName.slice(1)}Service`;
   const modelName = moduleName.charAt(0).toUpperCase() + moduleName.slice(1);
+  // Sanitize the model name for TypeScript identifiers
+  const sanitizedModelName = sanitizeInterfaceName(modelName);
+  const serviceName = `${sanitizedModelName}Service`;
+  const interfaceName = `I${sanitizedModelName}Service`;
   const moduleDirName = moduleName.toLowerCase();
-  const mainModelName = modelName;
-  const moduleConstantName = moduleName.toUpperCase();
-  const requestDtoName = `${modelName}CreateParams`;
+  const mainModelName = sanitizedModelName;
+  const moduleConstantName = sanitizeInterfaceName(moduleName).toUpperCase();
+  const requestDtoName = `${sanitizedModelName}CreateParams`;
 
   let serviceMethodsTs = "";
   const paths = swaggerJson.paths || {};

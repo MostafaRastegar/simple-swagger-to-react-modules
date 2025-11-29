@@ -1,6 +1,11 @@
 const fs = require("fs").promises;
 const path = require("path");
-const { formatCode, mapSwaggerTypeToTs, camelize } = require("../../utils");
+const {
+  formatCode,
+  mapSwaggerTypeToTs,
+  camelize,
+  sanitizeInterfaceName,
+} = require("../../utils");
 
 /**
  * Generates the service interface file.
@@ -15,15 +20,20 @@ async function generateServiceInterface(
   swaggerJson,
   baseUrl
 ) {
-  const interfaceName = `I${moduleName.charAt(0).toUpperCase() + moduleName.slice(1)}Service`;
   const modelName = moduleName.charAt(0).toUpperCase() + moduleName.slice(1);
-  const requestDtoName = `${modelName}CreateParams`;
+  // Sanitize the model name for TypeScript identifiers
+  const sanitizedModelName = sanitizeInterfaceName(modelName);
+  const interfaceName = `I${sanitizedModelName}Service`;
+  const requestDtoName = `${sanitizedModelName}CreateParams`;
   const responseTypeName = "ResponseObject";
 
   let methodsTs = "";
   const paths = swaggerJson.paths || {};
   const basePath = swaggerJson.basePath || "";
-  const mainModelName = modelName;
+  const mainModelName = sanitizedModelName;
+
+  // Keep original module name for path matching
+  const originalModelName = modelName;
   const definitions =
     swaggerJson.definitions || swaggerJson.components?.schemas || {};
 
@@ -43,8 +53,12 @@ async function generateServiceInterface(
       : pathUrl;
     const pathSegments = effectivePath.split("/");
     const relevantSegmentIndex = basePath
-      ? pathSegments.findIndex((seg) => seg === moduleName.split("/")[0])
-      : pathSegments.findIndex((seg) => seg === moduleName);
+      ? pathSegments.findIndex(
+          (seg) => seg === originalModelName.toLowerCase().split("/")[0]
+        )
+      : pathSegments.findIndex(
+          (seg) => seg === originalModelName.toLowerCase()
+        );
 
     if (relevantSegmentIndex !== -1) {
       for (const [method, operation] of Object.entries(pathItem)) {
@@ -54,7 +68,10 @@ async function generateServiceInterface(
             `${method}_${pathUrl.replace(/\//g, "_").replace(/\{|\}/g, "")}`;
 
           let methodName = camelize(
-            operationId.replace(new RegExp(moduleName, "i"), "")
+            operationId.replace(
+              new RegExp(originalModelName.toLowerCase(), "i"),
+              ""
+            )
           );
 
           // Convert PascalCase to camelCase for method names
@@ -107,7 +124,7 @@ async function generateServiceInterface(
             // Handle formData as single body object with correct interface name
             if (formDataParams.length > 0) {
               // Use same naming logic as modelGenerator
-              const formDataInterface = `${mainModelName}${camelize(operationId.replace(new RegExp(moduleName, "i"), ""))}FormData`;
+              const formDataInterface = `${mainModelName}${camelize(operationId.replace(new RegExp(originalModelName.toLowerCase(), "i"), ""))}FormData`;
               formDataInterfaceNames.add(formDataInterface);
               paramsTs += `body: ${formDataInterface}, `;
             }

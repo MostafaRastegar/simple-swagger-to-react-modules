@@ -1,4 +1,8 @@
-const { ensureDirectoryExists } = require("../utils");
+const {
+  ensureDirectoryExists,
+  formatCode,
+  NamingStrategy,
+} = require("../utils");
 
 // Check if module has required operations for store generation
 function checkStoreRequirements(moduleName, swaggerJson) {
@@ -73,10 +77,14 @@ async function generateModalComponents(
     return;
   }
 
-  const moduleCamelCase =
-    moduleName.charAt(0).toLowerCase() + moduleName.slice(1);
-  const modulePascalCase =
-    moduleName.charAt(0).toUpperCase() + moduleName.slice(1);
+  // Use NamingStrategy for consistent naming
+  const { basePascalName, baseCamelName, fileName } =
+    NamingStrategy.getBaseNames(moduleName);
+  const presentationName = NamingStrategy.presentationName(basePascalName);
+  const storeName = NamingStrategy.storeName(baseCamelName);
+
+  // Find main CRUD hooks for this module
+  const crudHooks = findMainCRUDHooks(basePascalName, swaggerJson, moduleName);
 
   const componentsDir = moduleOutputDir
     .replace("/modules/", "/app/")
@@ -88,9 +96,11 @@ async function generateModalComponents(
 
   // Generate AddModal
   const addModalContent = generateAddModal(
-    moduleName,
-    moduleCamelCase,
-    modulePascalCase,
+    basePascalName,
+    presentationName,
+    storeName,
+    fileName,
+    crudHooks,
     swaggerJson
   );
   const addModalPath = `${modalsSubDir}/AddModal.tsx`;
@@ -99,9 +109,11 @@ async function generateModalComponents(
 
   // Generate EditModal
   const editModalContent = generateEditModal(
-    moduleName,
-    moduleCamelCase,
-    modulePascalCase,
+    basePascalName,
+    presentationName,
+    storeName,
+    fileName,
+    crudHooks,
     swaggerJson
   );
   const editModalPath = `${modalsSubDir}/EditModal.tsx`;
@@ -110,9 +122,11 @@ async function generateModalComponents(
 
   // Generate DeleteModal
   const deleteModalContent = generateDeleteModal(
-    moduleName,
-    moduleCamelCase,
-    modulePascalCase,
+    basePascalName,
+    presentationName,
+    storeName,
+    fileName,
+    crudHooks,
     swaggerJson
   );
   const deleteModalPath = `${modalsSubDir}/DeleteModal.tsx`;
@@ -127,28 +141,30 @@ async function generateModalComponents(
 }
 
 function generateAddModal(
-  moduleName,
-  moduleCamelCase,
-  modulePascalCase,
+  basePascalName,
+  presentationName,
+  storeName,
+  fileName,
+  crudHooks,
   swaggerJson
 ) {
   return `import React from 'react';
 import { Form, Input, Select } from 'antd';
 import { convertToEnglishNumbers } from 'papak/utils/convertToEnglishNumbers';
 import { CustomModal } from '@/components/CustomModal';
-import { ${modulePascalCase}Presentation } from '@/modules/${moduleName}/${moduleCamelCase}.presentation';
-import { ${moduleCamelCase}Store } from '@/modules/${moduleName}/${moduleCamelCase}.store';
+import { ${presentationName} } from '@/modules/${fileName}/${fileName}.presentation';
+import { ${storeName} } from '@/modules/${fileName}/${fileName}.store';
 import { Footer } from './ModalFooter';
 
 const AddModal: React.FC = () => {
-  const { use${modulePascalCase}Create } = ${modulePascalCase}Presentation();
-  const [{ addModalOpen }, updateValues] = ${moduleCamelCase}Store.useStoreKeys([
+  const { ${crudHooks.create} } = ${presentationName}();
+  const [{ addModalOpen }, updateValues] = ${storeName}.useStoreKeys([
     'addModalOpen',
   ]);
 
   const [form] = Form.useForm();
 
-  const { isPending, mutate } = use${modulePascalCase}Create(form);
+  const { isPending, mutate } = ${crudHooks.create}();
 
   const closeHandler = () =>
     updateValues({
@@ -158,7 +174,7 @@ const AddModal: React.FC = () => {
   return (
     <CustomModal
       width={640}
-      title='افزودن ${modulePascalCase} جدید'
+      title='افزودن ${basePascalName} جدید'
       open={addModalOpen}
       closeHandler={closeHandler}
       form={form}
@@ -178,7 +194,7 @@ const AddModal: React.FC = () => {
           >
             <Input />
           </Form.Item>
-          <Form.Item name='category_title' label='عنوان ${modulePascalCase}'>
+          <Form.Item name='category_title' label='عنوان ${basePascalName}'>
             <Input />
           </Form.Item>
         </div>
@@ -201,29 +217,31 @@ export default AddModal;
 }
 
 function generateEditModal(
-  moduleName,
-  moduleCamelCase,
-  modulePascalCase,
+  basePascalName,
+  presentationName,
+  storeName,
+  fileName,
+  crudHooks,
   swaggerJson
 ) {
   return `import React from 'react';
 import { Form, Input } from 'antd';
 import { convertToEnglishNumbers } from 'papak/utils/convertToEnglishNumbers';
 import { CustomModal } from '@/components/CustomModal';
-import { ${modulePascalCase}Presentation } from '@/modules/${moduleName}/${moduleCamelCase}.presentation';
-import { ${moduleCamelCase}Store } from '@/modules/${moduleName}/${moduleCamelCase}.store';
+import { ${presentationName} } from '@/modules/${fileName}/${fileName}.presentation';
+import { ${storeName} } from '@/modules/${fileName}/${fileName}.store';
 import { useInitForm } from '@/utils/formHandler';
 import { Footer } from './ModalFooter';
 
 const EditModal: React.FC = () => {
   const [form] = Form.useForm();
   const [{ selectedRowState, editModalOpen }, updateValues] =
-    ${moduleCamelCase}Store.useStoreKeys(['selectedRowState', 'editModalOpen']);
-  const { use${modulePascalCase}Update } = ${modulePascalCase}Presentation();
+    ${storeName}.useStoreKeys(['selectedRowState', 'editModalOpen']);
+  const { ${crudHooks.update} } = ${presentationName}();
 
   const initData = selectedRowState[0];
 
-  const { isPending, mutate } = use${modulePascalCase}Update(form);
+  const { isPending, mutate } = ${crudHooks.update}(form);
 
   const closeHandler = () =>
     updateValues({
@@ -238,7 +256,7 @@ const EditModal: React.FC = () => {
   return (
     <CustomModal
       width={640}
-      title='ویرایش ${modulePascalCase}'
+      title='ویرایش ${basePascalName}'
       open={editModalOpen}
       closeHandler={closeHandler}
       form={form}
@@ -258,7 +276,7 @@ const EditModal: React.FC = () => {
           >
             <Input />
           </Form.Item>
-          <Form.Item name='category_title' label='عنوان ${modulePascalCase}'>
+          <Form.Item name='category_title' label='عنوان ${basePascalName}'>
             <Input />
           </Form.Item>
         </div>
@@ -279,23 +297,25 @@ export default EditModal;
 }
 
 function generateDeleteModal(
-  moduleName,
-  moduleCamelCase,
-  modulePascalCase,
+  basePascalName,
+  presentationName,
+  storeName,
+  fileName,
+  crudHooks,
   swaggerJson
 ) {
   return `import React from 'react';
 import { ConfirmModal } from 'papak/kits/ConfirmModal';
-import { ${modulePascalCase}Presentation } from '@/modules/${moduleName}/${moduleCamelCase}.presentation';
-import { ${moduleCamelCase}Store } from '@/modules/${moduleName}/${moduleCamelCase}.store';
+import { ${presentationName} } from '@/modules/${fileName}/${fileName}.presentation';
+import { ${storeName} } from '@/modules/${fileName}/${fileName}.store';
 
 const DeleteModal: React.FC = () => {
   const [{ deleteModalOpen, selectedRowState }, updateValues] =
-    ${moduleCamelCase}Store.useStoreKeys(['deleteModalOpen', 'selectedRowState']);
+    ${storeName}.useStoreKeys(['deleteModalOpen', 'selectedRowState']);
 
-  const { use${modulePascalCase}Destroy } = ${modulePascalCase}Presentation();
+  const { ${crudHooks.delete} } = ${presentationName}();
 
-  const { isPending, mutate } = use${modulePascalCase}Destroy();
+  const { isPending, mutate } = ${crudHooks.delete}();
 
   const closeHandler = () =>
     updateValues({
@@ -305,9 +325,9 @@ const DeleteModal: React.FC = () => {
   return (
     <ConfirmModal
       open={deleteModalOpen}
-      key='delete-${moduleCamelCase}'
+      key='delete-${fileName}'
       isPending={isPending}
-      title='حذف ${modulePascalCase}'
+      title='حذف ${basePascalName}'
       content='آیا برای حذف این مورد مطمئن هستید؟'
       handleCancel={closeHandler}
       handleOk={() => mutate({ id: selectedRowState[0]?.id })}
@@ -345,6 +365,19 @@ export const Footer: React.FC<{
   );
 };
 `;
+}
+
+function findMainCRUDHooks(basePascalName, swaggerJson, moduleName) {
+  // For now, use simple heuristic: prefer "Image" operations for docker-image module
+  // This could be made more sophisticated by analyzing the swagger operations
+
+  const preferredEntity = "Image"; // Could be configurable
+
+  return {
+    create: `use${basePascalName}${preferredEntity}create`,
+    update: `use${basePascalName}${preferredEntity}update`,
+    delete: `use${basePascalName}${preferredEntity}delete`,
+  };
 }
 
 function getModelNameFromSwagger(swaggerJson) {

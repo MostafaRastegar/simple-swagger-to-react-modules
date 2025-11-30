@@ -1,5 +1,8 @@
-const { ensureDirectoryExists } = require("../utils");
-const { formatCode } = require("../utils");
+const {
+  ensureDirectoryExists,
+  formatCode,
+  NamingStrategy,
+} = require("../utils");
 
 // Function to generate Next.js app route file
 async function generateAppRouteFile(moduleOutputDir, moduleName, swaggerJson) {
@@ -17,9 +20,11 @@ async function generateAppRouteFile(moduleOutputDir, moduleName, swaggerJson) {
     resourcePaths.push(...modulePaths);
   }
 
+  // Use NamingStrategy for directory paths
+  const { fileName, rawName } = NamingStrategy.getBaseNames(moduleName);
   const appDir = moduleOutputDir
     .replace("/modules/", "/app/")
-    .replace(`/modules/${moduleName}`, `/${moduleName}`);
+    .replace(`/modules/${rawName}`, `/${fileName}`);
   await ensureDirectoryExists(appDir);
 
   // Generate page.tsx
@@ -35,23 +40,24 @@ async function generateAppRouteFile(moduleOutputDir, moduleName, swaggerJson) {
     resourcePaths,
     swaggerJson
   );
-  const viewPath = `${appDir}/${moduleName}.view.tsx`;
+  // Use NamingStrategy for file paths
+  const viewPath = `${appDir}/${fileName}.view.tsx`;
   await require("fs").promises.writeFile(viewPath, viewContent);
   console.log(`Generated: ${viewPath}`);
 }
 
 // Generate Next.js page.tsx
 function generatePageFile(moduleName, resourcePaths, swaggerJson) {
-  const modulePascalCase =
-    moduleName.charAt(0).toUpperCase() + moduleName.slice(1);
-  const moduleCamelCase =
-    moduleName.charAt(0).toLowerCase() + moduleName.slice(1);
+  // Use centralized naming strategy
+  const { basePascalName, baseCamelName, fileName } =
+    NamingStrategy.getBaseNames(moduleName);
+  const viewName = NamingStrategy.viewName(basePascalName);
 
   return `'use client';
 
 import { Suspense } from 'react';
 // import { ContactContextProvider } from './_viewModule/contacts.context';
-import { ${modulePascalCase}View } from './${moduleCamelCase}.view';
+import { ${viewName} } from './${fileName}.view';
 
 export default function Page() {
   return (
@@ -60,7 +66,7 @@ export default function Page() {
         <p style={{ textAlign: 'center' }}>loading... on initial request</p>
       }
     >
-      <${modulePascalCase}View />
+      <${viewName} />
     </Suspense>
   );
 }
@@ -69,10 +75,17 @@ export default function Page() {
 
 // Generate view component
 function generateViewComponent(moduleName, resourcePaths, swaggerJson) {
-  const moduleCamelCase =
-    moduleName.charAt(0).toLowerCase() + moduleName.slice(1);
-  const modulePascalCase =
-    moduleName.charAt(0).toUpperCase() + moduleName.slice(1);
+  // Use centralized naming strategy
+  const { basePascalName, baseCamelName, fileName } =
+    NamingStrategy.getBaseNames(moduleName);
+  const viewName = NamingStrategy.viewName(basePascalName);
+  const presentationName = NamingStrategy.presentationName(basePascalName);
+  const storeName = NamingStrategy.storeName(baseCamelName);
+  const mainListHookName = NamingStrategy.findMainListHook(
+    basePascalName,
+    swaggerJson,
+    moduleName
+  );
   const modelName = getModelNameFromSwagger(moduleName, swaggerJson);
 
   return `'use client';
@@ -82,20 +95,20 @@ import { IconEdit, IconTrash } from '@tabler/icons-react';
 import { Button, type TableColumnsType } from 'antd';
 import { ContentEditableTable } from 'papak/kits/ContentEditableTable/default';
 import { PageFilterInlineSearch } from '@/components/PageFilterInlineSearch';
-import { ${modelName} } from '@/modules/${moduleName}/domains/models/${modulePascalCase}';
-import { ${modulePascalCase}Presentation } from '@/modules/${moduleName}/${moduleCamelCase}.presentation';
-import { ${moduleCamelCase}Store } from '@/modules/${moduleName}/${moduleCamelCase}.store';
+import { ${modelName} } from '@/modules/${fileName}/domains/models/${basePascalName}';
+import { ${presentationName} } from '@/modules/${fileName}/${fileName}.presentation';
+import { ${storeName} } from '@/modules/${fileName}/${fileName}.store';
 import AddModal from './_components/AddModal';
 import DeleteModal from './_components/DeleteModal';
 import EditModal from './_components/EditModal';
 
-export function ${modulePascalCase}View() {
-  const { use${modulePascalCase}List } = ${modulePascalCase}Presentation();
-  const getAll${modulePascalCase} = use${modulePascalCase}List();
-  const data = getAll${modulePascalCase}.data?.data;
+export function ${viewName}() {
+  const { ${mainListHookName} } = ${presentationName}();
+  const getAll${basePascalName} = ${mainListHookName}();
+  const data = getAll${basePascalName}.data?.data;
 
   const columns: TableColumnsType<${modelName}> = [
-    ${generateTableColumns(modelName, resourcePaths, swaggerJson, moduleCamelCase)}
+    ${generateTableColumns(modelName, resourcePaths, swaggerJson, baseCamelName)}
   ];
 
   return (
@@ -104,27 +117,27 @@ export function ${modulePascalCase}View() {
         searchBar={false}
         title={
           <div className='flex items-center gap-2'>
-            <span>${modulePascalCase} Management</span>
+            <span>${basePascalName} Management</span>
           </div>
         }
         inlineFilter={() => (
           <div className='flex flex-1 items-center'>
             <div className='mr-auto flex gap-4'>
-              <Link href={\`/dashboard/${moduleName}/add\`}>
+              <Link href={\`/dashboard/${fileName}/add\`}>
                 <Button className='mr-auto px-4 text-sm'>
-                  Add Multiple ${modulePascalCase}
+                  Add Multiple ${basePascalName}
                 </Button>
               </Link>
               <Button
                 type='primary'
                 className='mr-auto px-4 text-sm'
                 onClick={() => {
-                  ${moduleCamelCase}Store.setState({
+                  ${storeName}.setState({
                     addModalOpen: true,
                   });
                 }}
               >
-                New ${modulePascalCase}
+                New ${basePascalName}
               </Button>
             </div>
           </div>
@@ -134,10 +147,10 @@ export function ${modulePascalCase}View() {
         <ContentEditableTable<${modelName}>
           count={data?.count}
           data={data?.results || []}
-          isPending={getAll${modulePascalCase}.isPending}
+          isPending={getAll${basePascalName}.isPending}
           columns={columns}
           rowKey='id'
-          paginationPath={\`dashboard/${moduleName}\`}
+          paginationPath={\`dashboard/${fileName}\`}
           actions={[]}
         />
       </div>
